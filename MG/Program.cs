@@ -1,5 +1,8 @@
 var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder(args);
 
+// ADD THIS BLOCK TO SUPPORT AZURE PORT BINDING
+var port = Environment.GetEnvironmentVariable("PORT") ?? "80";
+builder.WebHost.UseUrls($"http://*:{port}");
 
 // Add services to the container.
 builder.Services.AddControllers()
