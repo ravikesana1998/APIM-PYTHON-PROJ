@@ -1,34 +1,47 @@
-# docker-build-push.yml
-# Trigger on changes to main branch
 trigger:
 - main
 
 variables:
-  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'  # <-- Service connection to ACR
-  imageRepository: 'mgapp'                                                # <-- Image name in ACR
-  containerRegistry: 'pythonrreg.azurecr.io'                              # <-- Your ACR login server
-  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'                  # <-- Path to Dockerfile
-  tag: '$(Build.BuildId)'                                                 # <-- Dynamic tag
-  vmImageName: 'ubuntu-latest'                                            # Used if you use Microsoft-hosted agent (optional)
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
+  imageRepository: 'mgapp'                            # Name of your app/image in ACR
+  containerRegistry: 'pythonrreg.azurecr.io'          # ACR login server
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  tag: '$(Build.BuildId)'
+  imageNameWithTag: '$(containerRegistry)/$(imageRepository):$(tag)'
+  imageNameLatest: '$(containerRegistry)/$(imageRepository):latest'
 
-# Use your self-hosted pool
 pool:
   name: 'self-hosted-pool'
 
 stages:
+# ------------------ Stage 1: BUILD ------------------
 - stage: Build
-  displayName: Build and Push to ACR
+  displayName: 'Docker Build'
   jobs:
-  - job: DockerBuildAndPush
-    displayName: Docker Build and Push
+  - job: BuildImage
+    displayName: 'Build Docker Image'
+    steps:
+    - script: |
+        echo "Building Docker image: $(imageNameWithTag)"
+        docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
+      displayName: 'Build Docker Image'
+
+# ------------------ Stage 2: PUSH ------------------
+- stage: Push
+  displayName: 'Push to ACR'
+  dependsOn: Build
+  jobs:
+  - job: PushImage
+    displayName: 'Push Docker Image to ACR'
     steps:
     - task: Docker@2
-      displayName: Build and push image to ACR
+      displayName: 'Login to ACR'
       inputs:
-        command: buildAndPush
-        repository: $(imageRepository)
-        dockerfile: $(dockerfilePath)
+        command: login
         containerRegistry: $(dockerRegistryServiceConnection)
-        tags: |
-          latest
-          $(tag)
+
+    - script: |
+        echo "Pushing Docker image to ACR..."
+        docker push $(imageNameWithTag)
+        docker push $(imageNameLatest)
+      displayName: 'Push Docker Image'
