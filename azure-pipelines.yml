@@ -1,0 +1,34 @@
+# docker-build-push.yml
+# Trigger on changes to main branch
+trigger:
+- main
+
+variables:
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'  # <-- Service connection to ACR
+  imageRepository: 'mgapp'                                                # <-- Image name in ACR
+  containerRegistry: 'pythonrreg.azurecr.io'                              # <-- Your ACR login server
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'                  # <-- Path to Dockerfile
+  tag: '$(Build.BuildId)'                                                 # <-- Dynamic tag
+  vmImageName: 'ubuntu-latest'                                            # Used if you use Microsoft-hosted agent (optional)
+
+# Use your self-hosted pool
+pool:
+  name: 'self-hosted-pool'
+
+stages:
+- stage: Build
+  displayName: Build and Push to ACR
+  jobs:
+  - job: DockerBuildAndPush
+    displayName: Docker Build and Push
+    steps:
+    - task: Docker@2
+      displayName: Build and push image to ACR
+      inputs:
+        command: buildAndPush
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        containerRegistry: $(dockerRegistryServiceConnection)
+        tags: |
+          latest
+          $(tag)
