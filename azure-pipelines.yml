@@ -1,52 +1,113 @@
 trigger:
-- main
+  - main
 
 variables:
-  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'  # Azure Container Registry connection
-  imageRepository: 'pythonrreg'                                            # Must be lowercase
-  containerRegistry: 'pythonrreg.azurecr.io'                               # ACR login server
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
+  imageRepository: 'pythonrreg'
+  containerRegistry: 'pythonrreg.azurecr.io'
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
   imageNameWithTag: '$(containerRegistry)/$(imageRepository):$(tag)'
   imageNameLatest: '$(containerRegistry)/$(imageRepository):latest'
+  swaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
+  apimName: 'python-api'
+  apimResourceGroup: 'rg-23-6'
+  apimApiName: 'python-api'
+  subscriptionId: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
 
 pool:
   name: 'self-hosted-pool'
 
-# ------------------ Stage 1: BUILD ------------------
 stages:
 - stage: Build
   displayName: 'Docker Build'
   jobs:
-  - job: BuildImage
-    displayName: 'Build Docker Image'
-    steps:
-    - script: |
-        echo "##[group]Build Image"
-        echo "Building Docker image: $(imageNameWithTag)"
-        docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
-        echo "##[endgroup]"
+    - job: BuildImage
       displayName: 'Build Docker Image'
+      steps:
+        - script: |
+            echo "##[group]Building Docker image"
+            echo "Image: $(imageNameWithTag)"
+            docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
+            echo "##[endgroup]"
+          displayName: 'Docker Build'
 
-# ------------------ Stage 2: PUSH ------------------
 - stage: Push
-  displayName: 'Push to ACR'
+  displayName: 'Push Docker Image to ACR'
   dependsOn: Build
   jobs:
-  - job: PushImage
-    displayName: 'Push Docker Image to ACR'
-    steps:
-    - task: Docker@2
-      displayName: 'Login to Azure Container Registry'
-      inputs:
-        command: login
-        containerRegistry: $(dockerRegistryServiceConnection)
+    - job: PushImage
+      displayName: 'Push to ACR'
+      steps:
+        - task: Docker@2
+          displayName: 'Login to Azure Container Registry'
+          inputs:
+            command: login
+            containerRegistry: $(dockerRegistryServiceConnection)
 
-    - script: |
-        echo "##[group]Pushing Images"
-        echo "Pushing Docker image with tag: $(imageNameWithTag)"
-        docker push $(imageNameWithTag)
-        echo "Pushing Docker image with tag: $(imageNameLatest)"
-        docker push $(imageNameLatest)
-        echo "##[endgroup]"
-      displayName: 'Push Docker Image to ACR'
+        - script: |
+            echo "##[group]Pushing Docker Images"
+            echo "Pushing: $(imageNameWithTag)"
+            docker push $(imageNameWithTag)
+            echo "Pushing: $(imageNameLatest)"
+            docker push $(imageNameLatest)
+            echo "##[endgroup]"
+          displayName: 'Push Docker Image'
+- stage: ImportOpenAPI
+  displayName: 'Import OpenAPI into APIM'
+  dependsOn: Push
+  jobs:
+    - job: ImportSwagger
+      displayName: 'Download & Import Swagger to APIM'
+      steps:
+        - task: UsePythonVersion@0
+          inputs:
+            versionSpec: '3.x'
+
+        - task: AzureCLI@2
+          displayName: 'Download Swagger, Split by Method, and Import to APIM'
+          inputs:
+            azureSubscription: '69bd33e0-0d1f-4f52-86c7-d4589813ac29'
+            scriptType: 'bash'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
+              echo "🔽 Downloading Swagger JSON..."
+              curl -sSL $(swaggerUrl) -o swagger.json
+
+              echo "📁 Creating output directory..."
+              mkdir -p split
+
+              echo "✂️ Splitting Swagger by HTTP method..."
+              python3 - <<EOF
+              import json, os
+
+              with open('swagger.json') as f:
+                  swagger = json.load(f)
+
+              for path, methods in swagger['paths'].items():
+                  for method, op in methods.items():
+                      single = {
+                          **swagger,
+                          'paths': {
+                              path: { method: op }
+                          }
+                      }
+                      name = f"{method.upper()}_{path.strip('/').replace('/', '_').replace('{','').replace('}','')}.json"
+                      with open(f"split/{name}", 'w') as out:
+                          json.dump(single, out, indent=2)
+              EOF
+
+              echo "☁️ Importing APIs into Azure API Management..."
+              for file in split/*.json; do
+                echo "📤 Importing $file"
+                az apim api import \
+                  --resource-group $(apimResourceGroup) \
+                  --service-name $(apimName) \
+                  --api-id $(apimApiName) \
+                  --path $(apimApiName) \
+                  --specification-format OpenApiJson \
+                  --specification-path "$file" \
+                  --subscription-id $(subscriptionId) \
+                  --api-revision 1 \
+                  --display-name "$(basename "$file" .json)"
+              done
