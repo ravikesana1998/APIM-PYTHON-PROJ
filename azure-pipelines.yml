@@ -2,9 +2,9 @@ trigger:
 - main
 
 variables:
-  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
-  imageRepository: 'mgapp'                            # Name of your app/image in ACR
-  containerRegistry: 'pythonrreg.azurecr.io'          # ACR login server
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'  # Azure Container Registry connection
+  imageRepository: 'pythonrreg'                                            # Must be lowercase
+  containerRegistry: 'pythonrreg.azurecr.io'                               # ACR login server
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
   imageNameWithTag: '$(containerRegistry)/$(imageRepository):$(tag)'
@@ -13,8 +13,8 @@ variables:
 pool:
   name: 'self-hosted-pool'
 
-stages:
 # ------------------ Stage 1: BUILD ------------------
+stages:
 - stage: Build
   displayName: 'Docker Build'
   jobs:
@@ -22,8 +22,10 @@ stages:
     displayName: 'Build Docker Image'
     steps:
     - script: |
+        echo "##[group]Build Image"
         echo "Building Docker image: $(imageNameWithTag)"
         docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
+        echo "##[endgroup]"
       displayName: 'Build Docker Image'
 
 # ------------------ Stage 2: PUSH ------------------
@@ -35,13 +37,16 @@ stages:
     displayName: 'Push Docker Image to ACR'
     steps:
     - task: Docker@2
-      displayName: 'Login to ACR'
+      displayName: 'Login to Azure Container Registry'
       inputs:
         command: login
         containerRegistry: $(dockerRegistryServiceConnection)
 
     - script: |
-        echo "Pushing Docker image to ACR..."
+        echo "##[group]Pushing Images"
+        echo "Pushing Docker image with tag: $(imageNameWithTag)"
         docker push $(imageNameWithTag)
+        echo "Pushing Docker image with tag: $(imageNameLatest)"
         docker push $(imageNameLatest)
-      displayName: 'Push Docker Image'
+        echo "##[endgroup]"
+      displayName: 'Push Docker Image to ACR'
