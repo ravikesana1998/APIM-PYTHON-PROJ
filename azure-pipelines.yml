@@ -55,7 +55,6 @@ stages:
           displayName: 'Push Docker Image'
 
 # -------------------- APIM IMPORT ------------------
-
 - stage: ImportOpenAPI
   displayName: 'Import API to APIM'
   dependsOn: Push
@@ -63,11 +62,11 @@ stages:
     - job: ImportAPI
       displayName: 'Process and Import Swagger'
       steps:
-        - task: UsePythonVersion@0
-          displayName: '🐍 Setup Python'
-          inputs:
-            versionSpec: '3.x'
-            addToPath: true
+        - script: |
+            echo "Checking Python installation..."
+            python3 --version
+            pip3 --version
+          displayName: 'Verify Python Installation'
 
         - task: AzureCLI@2
           displayName: '☁️ Import to APIM'
@@ -89,7 +88,7 @@ stages:
               from pathlib import Path
 
               def sanitize_name(method, path):
-                  return f\"{method.upper()}_{path.strip('/').replace('/', '_').replace('{','').replace('}','')}\"
+                  return f'{method.upper()}_{path.strip(\"/\").replace(\"/\", \"_\").replace(\"{\",\"\").replace(\"}\",\"\")}'
 
               try:
                   with open('swagger.json') as f:
@@ -108,9 +107,9 @@ stages:
                           out_path = Path('split') / filename
                           with open(out_path, 'w') as out_file:
                               json.dump(new_spec, out_file, indent=2)
-                          print(f\"✔ Created: {out_path}\")
+                          print(f'✔ Created: {out_path}')
               except Exception as e:
-                  print(f\"❌ Error: {e}\")
+                  print(f'❌ Error: {e}')
                   exit(1)
               "
 
