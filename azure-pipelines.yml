@@ -50,18 +50,20 @@ stages:
     - job: ImportSwagger
       steps:
         - script: |
-            echo "🔽 Downloading Swagger..."
+            cd $(Build.SourcesDirectory)
+
+            echo "Downloading Swagger..."
             curl -sSL "$(swaggerUrl)" -o swagger.json
 
-            echo "✂️ Splitting Swagger by CRUD methods..."
+            echo "Splitting Swagger..."
             python3 split_swagger_by_method.py
 
-            echo "☁️ Importing to APIM..."
+            echo "Importing to APIM..."
             export APIM_API_NAME=$(apimApiName)
             export APIM_RESOURCE_GROUP=$(apimResourceGroup)
             export APIM_SERVICE_NAME=$(apimName)
             export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-            export swaggerUrl=$(swaggerUrl)  # ✅ Add this line
+            export APIM_SWAGGER_URL=https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net
 
             python3 sync_apim_operations.py
-          displayName: 'Run Swagger to APIM Import'
+          displayName: 'Run Swagger Split & Import to APIM'
