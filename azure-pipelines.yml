@@ -55,6 +55,7 @@ stages:
           displayName: 'Push Docker Image'
 
 # -------------------- APIM IMPORT ------------------
+
 - stage: ImportOpenAPI
   displayName: 'Import API to APIM'
   dependsOn: Push
