@@ -63,10 +63,10 @@ stages:
       displayName: 'Process and Import Swagger'
       steps:
         - script: |
-            echo "Checking Python installation..."
-            python3 --version
-            pip3 --version
-          displayName: 'Verify Python Installation'
+            echo "Checking required tools..."
+            python3 --version || { echo "##[error]Python 3 not found"; exit 1; }
+            az --version || { echo "##[error]Azure CLI not found"; exit 1; }
+          displayName: 'Verify Prerequisites'
 
         - task: AzureCLI@2
           displayName: '☁️ Import to APIM'
@@ -75,8 +75,14 @@ stages:
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
+              # Set the active subscription
+              az account set --subscription "$(subscriptionId)"
+              
               echo "🔽 Downloading Swagger JSON..."
-              curl -sSL "$(swaggerUrl)" -o swagger.json
+              curl -sSL "$(swaggerUrl)" -o swagger.json || {
+                echo "##[error]Failed to download Swagger JSON"
+                exit 1
+              }
 
               echo "📁 Creating split/ directory..."
               mkdir -p split
@@ -111,7 +117,10 @@ stages:
               except Exception as e:
                   print(f'❌ Error: {e}')
                   exit(1)
-              "
+              " || {
+                echo "##[error]Failed to split Swagger file"
+                exit 1
+              }
 
               echo "☁️ Importing APIs into Azure API Management..."
               for file in split/*.json; do
@@ -121,13 +130,13 @@ stages:
                 az apim api import \
                   --resource-group "$(apimResourceGroup)" \
                   --service-name "$(apimName)" \
-                  --api-id "$(apimApiName)" \
+                  --api-id "$(apimApiName)_$api_name" \
                   --path "$(apimApiName)" \
                   --specification-format OpenApiJson \
                   --specification-path "$file" \
-                  --subscription-id "$(subscriptionId)" \
                   --api-revision 1 \
-                  --display-name "$api_name" || {
+                  --display-name "$api_name" \
+                  --service-url "$(swaggerUrl)" || {
                     echo "##[error]❌ Failed to import $api_name"
                     exit 1
                   }
