@@ -94,7 +94,7 @@ stages:
                   --resource-group "$(apimResourceGroup)" \
                   --service-name "$(apimName)" \
                   --api-id "$api_name" \
-                  --path "$(apimApiName)" \
+                  --path "$api_name" \
                   --specification-format OpenApiJson \
                   --specification-path "$file" \
                   --api-revision 1 \
