@@ -71,67 +71,53 @@ stages:
         - task: AzureCLI@2
           displayName: '☁️ Import to APIM'
           inputs:
-            azureSubscription: $(apimSubscription)
+            azureSubscription: '69bd33e0-0d1f-4f52-86c7-d4589813ac29'
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
-              # Download Swagger Definition
-              echo "##[group]🔽 Downloading Swagger JSON"
-              if ! curl -sSL "$(swaggerUrl)" -o swagger.json; then
-                echo "##[error]❌ Failed to download swagger.json"
-                exit 1
-              fi
-              echo "✔️ Downloaded successfully"
-              echo "##[endgroup]"
+              echo "🔽 Downloading Swagger JSON..."
+              curl -sSL "$(swaggerUrl)" -o swagger.json
 
-              # Process Swagger File
-              echo "##[group]✂️ Processing Swagger Definition"
+              echo "📁 Creating split/ directory..."
               mkdir -p split
-              
-              # Python script to split Swagger file
+
+              echo "✂️ Splitting Swagger by HTTP method..."
               python3 -c "
-import json
-import os
-from pathlib import Path
+              import json
+              import os
+              from pathlib import Path
 
-def sanitize_name(method, path)
-    return f\"{method.upper()}_{path.strip('/').replace('/', '_').replace('{','').replace('}','')}\"
-    try
-    with open('swagger.json') as f
-        swagger = json.load(f)
+              def sanitize_name(method, path):
+                  return f\"{method.upper()}_{path.strip('/').replace('/', '_').replace('{','').replace('}','')}\"
 
-    for path, methods in swagger.get('paths', {}).items()
-        for method, details in methods.items():
-            new_spec = {
-                'openapi': swagger.get('openapi', '3.0.0'),
-                'info': swagger.get('info', {}),
-                'servers': swagger.get('servers', []),
-                'paths': {path: {method: details}},
-                'components': swagger.get('components', {})
-              }
-            filename = sanitize_name(method, path) + '.json'
-            out_path = Path('split') / filename
-            with open(out_path, 'w') as f:
-                json.dump(new_spec, f, indent=2)
-            print(f'✔ Created: {out_path}')
-except Exception as e:
-    print(f'##[error]❌ Processing failed: {str(e)}')
-    exit(1)
-"
+              try:
+                  with open('swagger.json') as f:
+                      swagger = json.load(f)
 
-              if [ ! "$(ls -A split)" ]; then
-                echo "##[error]❌ No split files created"
-                exit 1
-              fi
-              echo "✔️ Processing complete"
-              echo "##[endgroup]"
+                  for path, methods in swagger.get('paths', {}).items():
+                      for method, details in methods.items():
+                          new_spec = {
+                              'openapi': swagger.get('openapi', '3.0.0'),
+                              'info': swagger.get('info', {}),
+                              'servers': swagger.get('servers', []),
+                              'paths': {path: {method: details}},
+                              'components': swagger.get('components', {})
+                          }
+                          filename = sanitize_name(method, path) + '.json'
+                          out_path = Path('split') / filename
+                          with open(out_path, 'w') as out_file:
+                              json.dump(new_spec, out_file, indent=2)
+                          print(f\"✔ Created: {out_path}\")
+              except Exception as e:
+                  print(f\"❌ Error: {e}\")
+                  exit(1)
+              "
 
-              # Import to APIM
-              echo "##[group]☁️ Importing to APIM"
+              echo "☁️ Importing APIs into Azure API Management..."
               for file in split/*.json; do
                 api_name=$(basename "$file" .json)
                 echo "📤 Importing: $api_name"
-                
+
                 az apim api import \
                   --resource-group "$(apimResourceGroup)" \
                   --service-name "$(apimName)" \
@@ -146,5 +132,5 @@ except Exception as e:
                     exit 1
                   }
               done
+
               echo "✔️ All APIs imported successfully"
-              echo "##[endgroup]"
