@@ -19,7 +19,7 @@ pool:
   name: 'self-hosted-pool'
 
 stages:
-# ---------------------- BUILD ----------------------
+# ----------- BUILD ----------- #
 - stage: Build
   displayName: 'Docker Build'
   jobs:
@@ -28,12 +28,11 @@ stages:
       steps:
         - script: |
             echo "##[group]Building Docker image"
-            echo "Image: $(imageNameWithTag)"
             docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
             echo "##[endgroup]"
           displayName: 'Docker Build'
 
-# ---------------------- PUSH -----------------------
+# ----------- PUSH ------------ #
 - stage: Push
   displayName: 'Push Docker Image to ACR'
   dependsOn: Build
@@ -54,7 +53,7 @@ stages:
             echo "##[endgroup]"
           displayName: 'Push Docker Image'
 
-# -------------------- APIM IMPORT ------------------
+# --------- IMPORT TO APIM -------- #
 - stage: ImportOpenAPI
   displayName: 'Import API to APIM'
   dependsOn: Push
@@ -63,83 +62,48 @@ stages:
       displayName: 'Process and Import Swagger'
       steps:
         - script: |
-            echo "Checking required tools..."
-            python3 --version || { echo "##[error]Python 3 not found"; exit 1; }
-            az --version || { echo "##[error]Azure CLI not found"; exit 1; }
-          displayName: 'Verify Prerequisites'
+            echo "Checking versions"
+            python3 --version
+            az --version
+          displayName: 'Verify Tools'
 
         - task: AzureCLI@2
-          displayName: '☁️ Import to APIM'
+          displayName: '☁️ Download Swagger & Import to APIM'
           inputs:
             azureSubscription: '69bd33e0-0d1f-4f52-86c7-d4589813ac29'
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
-              # Set the active subscription
-              az account set --subscription "$(subscriptionId)"
-              
-              echo "🔽 Downloading Swagger JSON..."
-              curl -sSL "$(swaggerUrl)" -o swagger.json || {
-                echo "##[error]Failed to download Swagger JSON"
-                exit 1
-              }
+              set -e
 
-              echo "📁 Creating split/ directory..."
-              mkdir -p split
+              echo "##[group]🔽 Downloading Swagger"
+              curl -sSL "$(swaggerUrl)" -o swagger.json
+              echo "✔ Downloaded swagger.json"
+              echo "##[endgroup]"
 
-              echo "✂️ Splitting Swagger by HTTP method..."
-              python3 -c "
-              import json
-              import os
-              from pathlib import Path
+              echo "##[group]🐍 Splitting Swagger"
+              python3 split_swagger_by_method.py
+              echo "##[endgroup]"
 
-              def sanitize_name(method, path):
-                  return f'{method.upper()}_{path.strip(\"/\").replace(\"/\", \"_\").replace(\"{\",\"\").replace(\"}\",\"\")}'
-
-              try:
-                  with open('swagger.json') as f:
-                      swagger = json.load(f)
-
-                  for path, methods in swagger.get('paths', {}).items():
-                      for method, details in methods.items():
-                          new_spec = {
-                              'openapi': swagger.get('openapi', '3.0.0'),
-                              'info': swagger.get('info', {}),
-                              'servers': swagger.get('servers', []),
-                              'paths': {path: {method: details}},
-                              'components': swagger.get('components', {})
-                          }
-                          filename = sanitize_name(method, path) + '.json'
-                          out_path = Path('split') / filename
-                          with open(out_path, 'w') as out_file:
-                              json.dump(new_spec, out_file, indent=2)
-                          print(f'✔ Created: {out_path}')
-              except Exception as e:
-                  print(f'❌ Error: {e}')
-                  exit(1)
-              " || {
-                echo "##[error]Failed to split Swagger file"
-                exit 1
-              }
-
-              echo "☁️ Importing APIs into Azure API Management..."
+              echo "##[group]☁️ Importing APIs into APIM"
               for file in split/*.json; do
                 api_name=$(basename "$file" .json)
                 echo "📤 Importing: $api_name"
-
+                
                 az apim api import \
                   --resource-group "$(apimResourceGroup)" \
                   --service-name "$(apimName)" \
-                  --api-id "$(apimApiName)_$api_name" \
+                  --api-id "$api_name" \
                   --path "$(apimApiName)" \
                   --specification-format OpenApiJson \
                   --specification-path "$file" \
                   --api-revision 1 \
                   --display-name "$api_name" \
-                  --service-url "$(swaggerUrl)" || {
+                  --service-url "$(swaggerUrl)" \
+                  --subscription-required false || {
                     echo "##[error]❌ Failed to import $api_name"
                     exit 1
                   }
               done
-
-              echo "✔️ All APIs imported successfully"
+              echo "##[endgroup]"
+              echo "✔ All APIs imported"
