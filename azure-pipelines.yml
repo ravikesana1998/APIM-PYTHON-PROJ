@@ -45,25 +45,32 @@ stages:
 
 # --------- IMPORT TO APIM -------- #
 - stage: ImportOpenAPI
+  displayName: 'Import Swagger into APIM'
   dependsOn: Push
   jobs:
     - job: ImportSwagger
+      displayName: 'Run Swagger Split & Import to APIM'
       steps:
-        - script: |
-            cd $(Build.SourcesDirectory)
-
-            echo "Downloading Swagger..."
-            curl -sSL "$(swaggerUrl)" -o swagger.json
-
-            echo "Splitting Swagger..."
-            python3 split_swagger_by_method.py
-
-            echo "Importing to APIM..."
-            export APIM_API_NAME=$(apimApiName)
-            export APIM_RESOURCE_GROUP=$(apimResourceGroup)
-            export APIM_SERVICE_NAME=$(apimName)
-            export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-            export APIM_SWAGGER_URL=https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net
-
-            python3 sync_apim_operations.py
+        - task: AzureCLI@2
           displayName: 'Run Swagger Split & Import to APIM'
+          inputs:
+            azureSubscription: 'DevopsServiceConnection'  # Replace with your actual service connection name
+            scriptType: 'bash'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
+              cd $(Build.SourcesDirectory)
+
+              echo "Downloading Swagger..."
+              curl -sSL "$(swaggerUrl)" -o swagger.json
+
+              echo "Splitting Swagger..."
+              python3 split_swagger_by_method.py
+
+              echo "Importing to APIM..."
+              export APIM_API_NAME=$(apimApiName)
+              export APIM_RESOURCE_GROUP=$(apimResourceGroup)
+              export APIM_SERVICE_NAME=$(apimName)
+              export APIM_SUBSCRIPTION_ID=$(subscriptionId)
+              export APIM_SWAGGER_URL=https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net
+
+              python3 sync_apim_operations.py
