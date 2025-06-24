@@ -1,5 +1,5 @@
 trigger:
-  - main
+- main
 
 variables:
   dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
@@ -27,10 +27,8 @@ stages:
       displayName: 'Build Docker Image'
       steps:
         - script: |
-            echo "##[group]Building Docker image"
             docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
-            echo "##[endgroup]"
-          displayName: 'Docker Build'
+          displayName: 'Build Docker Image'
 
 # ----------- PUSH ------------ #
 - stage: Push
@@ -41,69 +39,36 @@ stages:
       displayName: 'Push to ACR'
       steps:
         - task: Docker@2
-          displayName: 'Login to Azure Container Registry'
+          displayName: 'Login to ACR'
           inputs:
             command: login
             containerRegistry: $(dockerRegistryServiceConnection)
 
         - script: |
-            echo "##[group]Pushing Docker Images"
             docker push $(imageNameWithTag)
             docker push $(imageNameLatest)
-            echo "##[endgroup]"
-          displayName: 'Push Docker Image'
+          displayName: 'Push Docker Images'
 
 # --------- IMPORT TO APIM -------- #
 - stage: ImportOpenAPI
-  displayName: 'Import API to APIM'
+  displayName: 'Import Swagger into APIM'
   dependsOn: Push
   jobs:
-    - job: ImportAPI
-      displayName: 'Process and Import Swagger'
+    - job: ImportSwagger
+      displayName: 'Download, Split, and Import Swagger'
       steps:
         - script: |
-            echo "Checking versions"
-            python3 --version
-            az --version
-          displayName: 'Verify Tools'
+            echo "Downloading Swagger..."
+            curl -sSL "$(swaggerUrl)" -o swagger.json
 
-        - task: AzureCLI@2
-          displayName: '☁️ Download Swagger & Import to APIM'
-          inputs:
-            azureSubscription: '69bd33e0-0d1f-4f52-86c7-d4589813ac29'
-            scriptType: 'bash'
-            scriptLocation: 'inlineScript'
-            inlineScript: |
-              set -e
+            echo "Splitting Swagger by method..."
+            python3 split_swagger_by_method.py
 
-              echo "##[group]🔽 Downloading Swagger"
-              curl -sSL "$(swaggerUrl)" -o swagger.json
-              echo "✔ Downloaded swagger.json"
-              echo "##[endgroup]"
+            echo "Importing operations into APIM..."
+            export APIM_API_NAME=$(apimApiName)
+            export APIM_RESOURCE_GROUP=$(apimResourceGroup)
+            export APIM_SERVICE_NAME=$(apimName)
+            export APIM_SUBSCRIPTION_ID=$(subscriptionId)
 
-              echo "##[group]🐍 Splitting Swagger"
-              python3 split_swagger_by_method.py
-              echo "##[endgroup]"
-
-              echo "##[group]☁️ Importing APIs into APIM"
-              for file in split/*.json; do
-                api_name=$(basename "$file" .json)
-                echo "📤 Importing: $api_name"
-                
-                az apim api import \
-                  --resource-group "$(apimResourceGroup)" \
-                  --service-name "$(apimName)" \
-                  --api-id "$api_name" \
-                  --path "$api_name" \
-                  --specification-format OpenApiJson \
-                  --specification-path "$file" \
-                  --api-revision 1 \
-                  --display-name "$api_name" \
-                  --service-url "$(swaggerUrl)" \
-                  --subscription-required false || {
-                    echo "##[error]❌ Failed to import $api_name"
-                    exit 1
-                  }
-              done
-              echo "##[endgroup]"
-              echo "✔ All APIs imported"
+            python3 sync_apim_operations.py
+          displayName: 'Run Python Import Scripts'
