@@ -61,6 +61,7 @@ stages:
             export APIM_RESOURCE_GROUP=$(apimResourceGroup)
             export APIM_SERVICE_NAME=$(apimName)
             export APIM_SUBSCRIPTION_ID=$(subscriptionId)
+            export swaggerUrl=$(swaggerUrl)  # ✅ Add this line
 
             python3 sync_apim_operations.py
           displayName: 'Run Swagger to APIM Import'
