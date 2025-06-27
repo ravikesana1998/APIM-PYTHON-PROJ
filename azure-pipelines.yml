@@ -54,7 +54,7 @@ stages:
         - task: AzureCLI@2
           displayName: 'Run Swagger Split & Import to APIM'
           inputs:
-            azureSubscription: 'DevopsServiceConnection'  # Replace with your actual service connection name
+            azureSubscription: 'DevopsServiceConnection' 
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
