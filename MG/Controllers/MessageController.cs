@@ -11,56 +11,56 @@ namespace MG.Controllers
 			_mailBll = mailBll;
 		}
 
-		[HttpGet("{email}/{folder}/{messageId}")]
+		[HttpGet("GetMessageByFolderAndId/{email}/{folder}/{messageId}")]   // ✅ Add this line
 		public async Task<ActionResult> GetMessageByFolderAndId(string email, string folder, string messageId)
 		{
 			var response = await _mailBll.GetMessageByFolderAndId(email, folder, messageId);
 			return Ok(response);
 		}
 
-		[HttpGet("{email}/{messageId}")]
+		[HttpGet("GetMessageById/{email}/{messageId}")]    // ✅ Add this line
 		public async Task<ActionResult> GetMessagebyId(string email, string messageId)
 		{
 			var response = await _mailBll.GetMessagebyId(email, messageId);
 			return Ok(response);
 		}
 
-		[HttpGet("{email}/{messageId}")]
+		[HttpGet("GetMessageHeaders/{email}/{messageId}")]   // ✅ Add this line
 		public async Task<ActionResult> GetMessageHeaders(string email, string messageId)
 		{
 			var response = await _mailBll.GetMessageHeaders(email, messageId);
 			return Ok(response);
 		}
 
-		[HttpGet("{email}/{messageId}")]
+		[HttpGet("DownloadMessage/{email}/{messageId}")]    // ✅ Add this line
 		public async Task<ActionResult> DownloadMessage(string email, string messageId)
 		{
 			var response = await _mailBll.DownloadMessage(email, messageId);
 			return Ok(response);
 		}
 
-		[HttpGet("{email}/{messageId}")]
+		[HttpGet("DownloadMessageasStream/{email}/{messageId}")]   // ✅ Add this line
 		public async Task<ActionResult> DownloadMessageasStream(string email, string messageId)
 		{
 			var response = await _mailBll.DownloadMessageasStream(email, messageId);
 			return File(response, "message/rfc822", $"{messageId}.eml");
 		}
 
-		[HttpGet("{email}/{folderName}")]
+		[HttpGet("GetMessagesbyFolder/{email}/{folderName}")]    // ✅ Add this line
 		public async Task<ActionResult> GetMessagesbyFolder(string email, string folderName, string? filter, int pageNumber = 1, int pageSize = 10)
 		{
 			var response = await _mailBll.GetMessagesbyFolder(email, folderName, filter, pageNumber, pageSize);
 			return Ok(response);
 		}
 
-		[HttpGet("{email}/{messageId}")]
+		[HttpGet("GetAttachmentsbyMessageId/{email}/{messageId}")]    // ✅ Add this line
 		public async Task<ActionResult> GetAttachmentsbyMessageId(string email, string messageId)
 		{
 			var response = await _mailBll.GetAttachmentsbyMessageId(email, messageId);
 			return Ok(response);
 		}
 
-		[HttpGet("{email}/{messageId}/{attachmentId}")]
+		[HttpGet("DownloadAttachmentbyId/{email}/{messageId}/{attachmentId}")]     // ✅ Add this line
 		public async Task<ActionResult> DownloadAttachmentbyId(string email, string messageId, string attachmentId)
 		{
 			var attachment = await _mailBll.GetAttachmentbyId(email, messageId, attachmentId);
@@ -75,14 +75,14 @@ namespace MG.Controllers
 			}
 		}
 
-		[HttpGet("{email}/{parentFolderName}")]
+		[HttpGet("GetChildFolders/{email}/{parentFolderName}")]     // ✅ Add this line
 		public async Task<ActionResult> GetChildFolders(string email, string parentFolderName)
 		{
 			var response = await _mailBll.GetChildFolders(email, parentFolderName);
 			return Ok(response);
 		}
 
-		[HttpPost]
+		[HttpPost("MoveMessage")]  // ✅ Add this line
 		public async Task<ActionResult> MoveMessage(string email, string messageId, string destinationFolderId)
 		{
 			var response = await _mailBll.MoveMessage(email, messageId, destinationFolderId);
