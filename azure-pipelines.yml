@@ -72,7 +72,7 @@ stages:
               export APIM_SERVICE_NAME=$(apimName)
               export APIM_SUBSCRIPTION_ID=$(subscriptionId)
               export APIM_SWAGGER_URL=https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net
-              python3 cleanup_stale_operations.py
+              python3 cleanup_removed_operations.py
 
               echo "📦 Syncing Swagger operations to APIM..."
               python3 sync_apim_operations.py
