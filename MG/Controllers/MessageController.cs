@@ -2,7 +2,6 @@
 // {
 // 	public class MessageController : BaseController
 // 	{
-// 		IMessage_BLL _mailBll;
 
 // 		public MessageController(IMessage_BLL mailBll)
 // 		{
