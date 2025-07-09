@@ -10,9 +10,9 @@ variables:
   imageNameWithTag: '$(containerRegistry)/$(imageRepository):$(tag)'
   imageNameLatest: '$(containerRegistry)/$(imageRepository):latest'
   swaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
-  apimName: 'python-api'
+  apimName: 'dotnetapi9'
   apimResourceGroup: 'rg-23-6'
-  apimApiName: 'python-api'
+  apimApiName: 'dotnetapi9'
   subscriptionId: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
 
 pool:
