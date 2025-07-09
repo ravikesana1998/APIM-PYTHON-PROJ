@@ -11,12 +11,12 @@ namespace MG.Controllers
 			_mailBll = mailBll;
 		}
 
-		[HttpGet("GetMessageByFolderAndId/{email}/{folder}/{messageId}")]   // ✅ Add this line
-		public async Task<ActionResult> GetMessageByFolderAndId(string email, string folder, string messageId)
-		{
-			var response = await _mailBll.GetMessageByFolderAndId(email, folder, messageId);
-			return Ok(response);
-		}
+		// [HttpGet("GetMessageByFolderAndId/{email}/{folder}/{messageId}")]   // ✅ Add this line
+		// public async Task<ActionResult> GetMessageByFolderAndId(string email, string folder, string messageId)
+		// {
+		// 	var response = await _mailBll.GetMessageByFolderAndId(email, folder, messageId);
+		// 	return Ok(response);
+		// }
 
 		[HttpGet("GetMessageById/{email}/{messageId}")]    // ✅ Add this line
 		public async Task<ActionResult> GetMessagebyId(string email, string messageId)
