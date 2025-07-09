@@ -1,3 +1,5 @@
+# validate_apim_vs_swagger.py
+
 import requests
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
