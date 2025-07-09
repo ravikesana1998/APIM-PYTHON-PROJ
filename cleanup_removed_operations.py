@@ -1,3 +1,5 @@
+# cleanup_removed_operations.py
+
 import os
 import json
 import subprocess
