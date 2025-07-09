@@ -2,6 +2,7 @@ namespace MG.Controllers
 {
 	public class MessageController : BaseController
 	{
+        private readonly IMessage_BLL _mailBll; // ✅ Add this line
 
 		public MessageController(IMessage_BLL mailBll)
 		{
