@@ -2,12 +2,13 @@ import os
 import json
 import subprocess
 
-API_NAME = os.environ.get("APIM_API_NAME", "python-api")
-RESOURCE_GROUP = os.environ.get("APIM_RESOURCE_GROUP", "rg-23-6")
-SERVICE_NAME = os.environ.get("APIM_SERVICE_NAME", "python-api")
+API_NAME = os.environ.get("APIM_API_NAME")
+RESOURCE_GROUP = os.environ.get("APIM_RESOURCE_GROUP")
+SERVICE_NAME = os.environ.get("APIM_SERVICE_NAME")
 
 def list_current_apim_operations():
     try:
+        print("📡 Listing existing APIM operations...")
         output = subprocess.check_output([
             "az", "apim", "api", "operation", "list",
             "--resource-group", RESOURCE_GROUP,
@@ -17,7 +18,7 @@ def list_current_apim_operations():
         ], text=True)
         return {op["name"] for op in json.loads(output)}
     except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to list operations: {e}")
+        print(f"❌ Failed to list operations: {e.output}")
         return set()
 
 def list_split_operations(split_dir="split"):
