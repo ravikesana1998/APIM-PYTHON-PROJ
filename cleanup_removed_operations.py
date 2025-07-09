@@ -51,6 +51,7 @@ def delete_operation(op_name):
 
 def main():
     split_dir = "split"
+
     if not os.path.isdir(split_dir):
         print("❌ Directory 'split/' not found.")
         return
@@ -58,12 +59,18 @@ def main():
     apim_ops = list_current_api_operations()
     swagger_ops = list_split_operations(split_dir)
 
+    print(f"🔍 APIM Operations (in Azure): {len(apim_ops)}")
+    print(f"📁 Split Operations (from Swagger): {len(swagger_ops)}")
+
     stale_ops = apim_ops - swagger_ops
+    print(f"🧼 Stale Operations to be removed: {stale_ops}")
+
     if not stale_ops:
         print("✅ No stale operations to remove.")
     else:
         for op in stale_ops:
             delete_operation(op)
+
 
 
 if __name__ == "__main__":
