@@ -1,5 +1,7 @@
 namespace MG.Controllers
 {
+    [ApiController]               // ✅ Add this line
+    [Route("api/[controller]/[action]")]    // ✅ Add this line
 	public class MessageController : BaseController
 	{
         private readonly IMessage_BLL _mailBll; // ✅ Add this line
