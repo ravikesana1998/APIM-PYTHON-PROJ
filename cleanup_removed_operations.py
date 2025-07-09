@@ -1,5 +1,4 @@
 # cleanup_removed_operations.py
-
 import os
 import json
 import subprocess
@@ -23,8 +22,18 @@ def list_current_apim_operations():
         print(f"❌ Failed to list operations: {e.output}")
         return set()
 
-def list_split_operations(split_dir="split"):
-    return {os.path.splitext(f)[0] for f in os.listdir(split_dir) if f.endswith(".json")}
+def list_operation_ids_from_split(split_dir="split"):
+    operation_ids = set()
+    for f in os.listdir(split_dir):
+        if f.endswith(".json"):
+            with open(os.path.join(split_dir, f)) as file:
+                swagger = json.load(file)
+                path = list(swagger["paths"].keys())[0]
+                method = list(swagger["paths"][path].keys())[0]
+                op = swagger["paths"][path][method]
+                op_id = op.get("operationId", f"{method.upper()}_{path.strip('/').replace('/', '_')}")
+                operation_ids.add(op_id)
+    return operation_ids
 
 def delete_operation(op_name):
     print(f"🗑 Deleting stale operation: {op_name}")
@@ -42,7 +51,7 @@ def delete_operation(op_name):
         print(f"❌ Failed to delete {op_name}: {e}")
 
 def main():
-    split_ops = list_split_operations()
+    split_ops = list_operation_ids_from_split()
     apim_ops = list_current_apim_operations()
 
     stale_ops = apim_ops - split_ops
