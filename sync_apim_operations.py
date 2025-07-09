@@ -1,52 +1,40 @@
-# sync_apim_operations.py
+import os, json, subprocess
 
-import os
-import subprocess
+def sync_operation(swagger_file):
+    with open(swagger_file) as f:
+        swagger = json.load(f)
 
-API_NAME = os.environ.get("APIM_API_NAME", "python-api")
-RESOURCE_GROUP = os.environ.get("APIM_RESOURCE_GROUP", "rg-23-6")
-SERVICE_NAME = os.environ.get("APIM_SERVICE_NAME", "python-api")
-SUBSCRIPTION_ID = os.environ.get("APIM_SUBSCRIPTION_ID", "")
-SERVICE_URL = os.environ.get("APIM_SWAGGER_URL", "")
+    path = list(swagger["paths"].keys())[0]
+    method = list(swagger["paths"][path].keys())[0]
+    operation_id = swagger["paths"][path][method].get("operationId", f"{method.upper()}_{path.strip('/').replace('/', '_')}")
+    display_name = swagger["paths"][path][method].get("summary", operation_id)
 
-def import_operation(file_path, api_id):
-    print(f"📤 Importing {file_path} into APIM...")
+    print(f"🔁 Syncing: {operation_id} | {method.upper()} {path}")
 
     cmd = [
-        "az", "apim", "api", "import",
-        "--resource-group", RESOURCE_GROUP,
-        "--service-name", SERVICE_NAME,
-        "--api-id", api_id,
-        "--path", api_id,
-        "--specification-format", "OpenApiJson",
-        "--specification-path", file_path,
-        "--display-name", api_id,
-        "--api-revision", "1",
-        "--service-url", SERVICE_URL,
-        "--subscription-required", "false"
+        "az", "apim", "api", "operation", "create",
+        "--resource-group", os.environ["APIM_RESOURCE_GROUP"],
+        "--service-name", os.environ["APIM_SERVICE_NAME"],
+        "--api-id", os.environ["APIM_API_NAME"],
+        "--operation-id", operation_id,
+        "--display-name", display_name,
+        "--method", method.upper(),
+        "--url-template", path,
+        "--response-status-code", "200",
+        "--no-wait"
     ]
 
     try:
         subprocess.run(cmd, check=True)
-        print(f"✅ Imported {api_id}")
+        print(f"✅ Synced {operation_id}")
     except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to import {api_id}: {e}")
-        exit(1)
+        print(f"❌ Failed to sync {operation_id}: {e}")
 
 def main():
     split_dir = "split"
-    if not os.path.isdir(split_dir):
-        print("❌ Directory 'split/' not found.")
-        return
-
     for file in os.listdir(split_dir):
         if file.endswith(".json"):
-            file_path = os.path.join(split_dir, file)
-            api_id = os.path.splitext(file)[0]
-
-            import_operation(file_path, api_id)
-
-    print("✅ All APIs imported successfully.")
+            sync_operation(os.path.join(split_dir, file))
 
 if __name__ == "__main__":
     main()
