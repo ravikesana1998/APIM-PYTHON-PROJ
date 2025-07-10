@@ -2,7 +2,7 @@ trigger:
   - main
 
 variables:
-  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'  # 👈 Use your actual ACR service connection name here
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'  # Replace with actual ACR connection
   imageRepository: 'pythonrreg'
   containerRegistry: 'pythonrreg.azurecr.io'
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
@@ -14,7 +14,7 @@ variables:
   apimResourceGroup: 'rg-23-6'
   apimApiName: 'dotnetapi9'
   subscriptionId: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
-  appServiceName: 'pythonapps-e0hmd6eucuf9acg5'  # 👈 Your App Service name
+  appServiceName: 'pythonapps-e0hmd6eucuf9acg5'
 
 pool:
   name: 'self-hosted-pool'
@@ -49,7 +49,7 @@ stages:
         - task: AzureCLI@2
           displayName: 'Restart App Service + Sync to APIM'
           inputs:
-            azureSubscription: 'DevopsServiceConnection'
+            azureSubscription: 'DevopsServiceConnection'  # 👈 Replace with your actual service connection name
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
@@ -87,16 +87,16 @@ stages:
                 echo "✅ API $(apimApiName) already exists."
               fi
 
+              echo "📦 Setting environment variables for sync scripts..."
+              export SWAGGER_URL="$(swaggerUrl)"
+              export APIM_API_NAME="$(apimApiName)"
+              export APIM_RESOURCE_GROUP="$(apimResourceGroup)"
+              export APIM_SERVICE_NAME="$(apimName)"
+              export APIM_SUBSCRIPTION_ID="$(subscriptionId)"
+
               echo "🧹 Cleaning up stale APIM operations..."
-              export APIM_API_NAME=$(apimApiName)
-              export APIM_RESOURCE_GROUP=$(apimResourceGroup)
-              export APIM_SERVICE_NAME=$(apimName)
-              export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-              export APIM_SWAGGER_URL=$(swaggerUrl)
-
-
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
 
-              echo "📦 Syncing Swagger operations to APIM..."
+              echo "🚀 Syncing Swagger operations to APIM..."
               python3 sync_apim_operations.py
