@@ -1,12 +1,13 @@
 trigger:
-- main
+  - main
 
 variables:
-  dockerRegistryServiceConnection: 'your-acr-connection-id'
-  containerRegistry: 'pythonrreg.azurecr.io'
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
   imageRepository: 'pythonrreg'
+  containerRegistry: 'pythonrreg.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
-  imageName: '$(containerRegistry)/$(imageRepository):$(tag)'
+  imageNameWithTag: '$(containerRegistry)/$(imageRepository):$(tag)'
   imageNameLatest: '$(containerRegistry)/$(imageRepository):latest'
   swaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   apimName: 'dotnetapi9'
@@ -18,63 +19,82 @@ pool:
   name: 'self-hosted-pool'
 
 stages:
-- stage: BuildAndPushImage
+
+# ----------- BUILD & PUSH ----------- #
+- stage: BuildAndPush
   displayName: 'Build and Push Docker Image'
   jobs:
-    - job: DockerBuildPush
+    - job: BuildAndPush
       displayName: 'Build and Push'
       steps:
-        - script: |
-            docker build -t $(imageName) -t $(imageNameLatest) -f Dockerfile .
-            docker login $(containerRegistry) --username <USERNAME> --password <PASSWORD>
-            docker push $(imageName)
-            docker push $(imageNameLatest)
-          displayName: 'Docker Build and Push'
+        - task: Docker@2
+          displayName: 'Login to ACR'
+          inputs:
+            command: login
+            containerRegistry: $(dockerRegistryServiceConnection)
 
-- stage: ImportToAPIM
-  displayName: 'Sync Swagger to APIM'
-  dependsOn: BuildAndPushImage
+        - script: |
+            echo "🔨 Building Docker image..."
+            docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
+
+            echo "📤 Pushing Docker images..."
+            docker push $(imageNameWithTag)
+            docker push $(imageNameLatest)
+          displayName: 'Build and Push Docker Image'
+
+
+# --------- SYNC TO APIM -------- #
+- stage: SyncToAPIM
+  displayName: 'Sync Swagger with APIM'
+  dependsOn: BuildAndPush
   jobs:
     - job: ImportSwagger
-      displayName: 'Import Swagger to APIM'
+      displayName: 'Import & Sync Swagger'
       steps:
-        - script: |
-            cd $(Build.SourcesDirectory)
+        - task: AzureCLI@2
+          displayName: 'Download, Split, Sync APIM'
+          inputs:
+            azureSubscription: 'DevopsServiceConnection'
+            scriptType: 'bash'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
+              set -e
+              cd $(Build.SourcesDirectory)
 
-            echo "📥 Downloading latest Swagger spec..."
-            curl -sSL "$(swaggerUrl)" -o swagger.json
+              echo "📥 Downloading Swagger..."
+              curl -sSL "$(swaggerUrl)" -o swagger.json
 
-            echo "🔨 Splitting Swagger into individual operations..."
-            python3 split_swagger_by_method.py
+              echo "🔨 Splitting Swagger into per-operation files..."
+              python3 split_swagger_by_method.py
 
-            echo "🛡️ Ensuring base API exists in APIM..."
-            az apim api show --resource-group $(apimResourceGroup) --service-name $(apimName) --api-id $(apimApiName) > /dev/null 2>&1
-            if [ $? -ne 0 ]; then
-              echo "🔧 Creating base API in APIM..."
-              az apim api create \
+              echo "🛡️ Ensuring API exists in APIM..."
+              if ! az apim api show \
                 --resource-group $(apimResourceGroup) \
                 --service-name $(apimName) \
-                --api-id $(apimApiName) \
-                --display-name $(apimApiName) \
-                --path $(apimApiName) \
-                --protocols https \
-                --subscription-required false
-            else
-              echo "✅ API $(apimApiName) already exists."
-            fi
+                --api-id $(apimApiName) > /dev/null 2>&1; then
 
-            echo "🧹 Comparing and cleaning up removed operations..."
-            export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-            export APIM_RESOURCE_GROUP=$(apimResourceGroup)
-            export APIM_SERVICE_NAME=$(apimName)
-            export APIM_API_NAME=$(apimApiName)
-            export SWAGGER_URL=$(swaggerUrl)
+                echo "🔧 Creating new API $(apimApiName)..."
+                az apim api create \
+                  --resource-group $(apimResourceGroup) \
+                  --service-name $(apimName) \
+                  --api-id $(apimApiName) \
+                  --display-name $(apimApiName) \
+                  --path $(apimApiName) \
+                  --protocols https \
+                  --subscription-required false
+              else
+                echo "✅ API $(apimApiName) already exists."
+              fi
 
-            python3 validate_apim_vs_swagger.py
-            python3 cleanup_removed_operations.py
+              echo "🧹 Cleaning up stale APIM operations..."
+              export APIM_SUBSCRIPTION_ID=$(subscriptionId)
+              export APIM_RESOURCE_GROUP=$(apimResourceGroup)
+              export APIM_SERVICE_NAME=$(apimName)
+              export APIM_API_NAME=$(apimApiName)
+              export SWAGGER_URL=$(swaggerUrl)
 
-            echo "📦 Syncing new and updated operations to APIM..."
-            python3 sync_apim_operations.py
-          displayName: 'Run Swagger Sync Pipeline'
-          env:
-            AZURE_SUBSCRIPTION_ID: $(subscriptionId)
+              python3 validate_apim_vs_swagger.py
+              python3 cleanup_removed_operations.py
+
+              echo "📦 Syncing Swagger operations to APIM..."
+              python3 sync_apim_operations.py
