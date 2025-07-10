@@ -77,15 +77,23 @@ stages:
                   --protocols https \
                   --subscription-required false
 
-                echo "🧹 Cleaning up stale APIM operations..."
-                export APIM_API_NAME=$(apimApiName)
-                export APIM_RESOURCE_GROUP=$(apimResourceGroup)
-                export APIM_SERVICE_NAME=$(apimName)
-                export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-                export APIM_SWAGGER_URL=$(swaggerUrl)
+                echo "📥 Downloading Swagger..."
+curl -sSL "$(swaggerUrl)" -o swagger.json
 
-                python3 validate_apim_vs_swagger.py
-                python3 cleanup_removed_operations.py
+echo "🔨 Splitting Swagger into per-operation files..."
+mkdir -p ./split
+python3 split_swagger_by_method.py
 
-                echo "📦 Syncing Swagger operations to APIM..."
-                python3 sync_apim_operations.py
+echo "🧹 Cleaning up stale APIM operations..."
+export APIM_API_NAME=$(apimApiName)
+export APIM_RESOURCE_GROUP=$(apimResourceGroup)
+export APIM_SERVICE_NAME=$(apimName)
+export APIM_SUBSCRIPTION_ID=$(subscriptionId)
+export SWAGGER_URL=$(swaggerUrl)
+
+python3 validate_apim_vs_swagger.py
+python3 cleanup_removed_operations.py
+
+echo "📦 Syncing Swagger operations to APIM..."
+python3 sync_apim_operations.py
+
