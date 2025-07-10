@@ -16,26 +16,26 @@ namespace MG.Controllers
 		// 	return Ok(response);
 		// }
 
-		[HttpGet("{email}/{messageId}")]
-		public async Task<ActionResult> GetMessagebyId(string email, string messageId)
-		{
-			var response = await _mailBll.GetMessagebyId(email, messageId);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{messageId}")]
+		// public async Task<ActionResult> GetMessagebyId(string email, string messageId)
+		// {
+		// 	var response = await _mailBll.GetMessagebyId(email, messageId);
+		// 	return Ok(response);
+		// }
 
-		[HttpGet("{email}/{messageId}")]
-		public async Task<ActionResult> GetMessageHeaders(string email, string messageId)
-		{
-			var response = await _mailBll.GetMessageHeaders(email, messageId);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{messageId}")]
+		// public async Task<ActionResult> GetMessageHeaders(string email, string messageId)
+		// {
+		// 	var response = await _mailBll.GetMessageHeaders(email, messageId);
+		// 	return Ok(response);
+		// }
 
-		[HttpGet("{email}/{messageId}")]
-		public async Task<ActionResult> DownloadMessage(string email, string messageId)
-		{
-			var response = await _mailBll.DownloadMessage(email, messageId);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{messageId}")]
+		// public async Task<ActionResult> DownloadMessage(string email, string messageId)
+		// {
+		// 	var response = await _mailBll.DownloadMessage(email, messageId);
+		// 	return Ok(response);
+		// }
 
 		[HttpGet("{email}/{messageId}")]
 		public async Task<ActionResult> DownloadMessageasStream(string email, string messageId)
@@ -51,12 +51,12 @@ namespace MG.Controllers
 			return Ok(response);
 		}
 
-		[HttpGet("{email}/{messageId}")]
-		public async Task<ActionResult> GetAttachmentsbyMessageId(string email, string messageId)
-		{
-			var response = await _mailBll.GetAttachmentsbyMessageId(email, messageId);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{messageId}")]
+		// public async Task<ActionResult> GetAttachmentsbyMessageId(string email, string messageId)
+		// {
+		// 	var response = await _mailBll.GetAttachmentsbyMessageId(email, messageId);
+		// 	return Ok(response);
+		// }
 
 		[HttpGet("{email}/{messageId}/{attachmentId}")]
 		public async Task<ActionResult> DownloadAttachmentbyId(string email, string messageId, string attachmentId)
@@ -80,11 +80,11 @@ namespace MG.Controllers
 			return Ok(response);
 		}
 
-		[HttpPost]
-		public async Task<ActionResult> MoveMessage(string email, string messageId, string destinationFolderId)
-		{
-			var response = await _mailBll.MoveMessage(email, messageId, destinationFolderId);
-			return Ok(response);
-		}
+		// [HttpPost]
+		// public async Task<ActionResult> MoveMessage(string email, string messageId, string destinationFolderId)
+		// {
+		// 	var response = await _mailBll.MoveMessage(email, messageId, destinationFolderId);
+		// 	return Ok(response);
+		// }
 	}
 }
