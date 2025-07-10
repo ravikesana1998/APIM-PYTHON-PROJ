@@ -89,10 +89,11 @@ stages:
 
               echo "📦 Setting environment variables for sync scripts..."
               export SWAGGER_URL="$(swaggerUrl)"
-              export APIM_API_NAME="$(apimApiName)"
+              export AZURE_SUBSCRIPTION_ID="$(subscriptionId)"
+              export APIM_NAME="$(apimName)"
               export APIM_RESOURCE_GROUP="$(apimResourceGroup)"
-              export APIM_SERVICE_NAME="$(apimName)"
-              export APIM_SUBSCRIPTION_ID="$(subscriptionId)"
+              export APIM_API_NAME="$(apimApiName)"
+
 
               echo "🧹 Cleaning up stale APIM operations..."
               python3 validate_apim_vs_swagger.py
