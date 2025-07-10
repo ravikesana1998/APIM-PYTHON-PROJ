@@ -1,53 +1,35 @@
 import json
 import os
-import re
 
-split_dir = "./split"
-os.makedirs(split_dir, exist_ok=True)
+# Constants
+SWAGGER_FILE = "swagger.json"
+OUTPUT_DIR = "split"
 
-with open("swagger.json", "r") as f:
+# Create output directory if it doesn't exist
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Load the Swagger JSON
+with open(SWAGGER_FILE, "r") as f:
     swagger = json.load(f)
 
 paths = swagger.get("paths", {})
+for path, path_item in paths.items():
+    for method, operation in path_item.items():
+        method_upper = method.upper()
+        safe_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
+        filename = f"{method_upper}_{safe_path}.json"
 
-for path, methods in paths.items():
-    for method, details in methods.items():
-        # Build a clean filename based on method and path
-        filename = f"{method.upper()}_{path.strip('/').replace('/', '_').replace('{', '').replace('}', '')}.json"
-        filepath = os.path.join(split_dir, filename)
-
-        # Extract and define parameters
-        parameters = details.get("parameters", [])
-        defined_params = {param["name"] for param in parameters if "name" in param and param.get("in") == "path"}
-        path_params = set(re.findall(r"{(.*?)}", path))
-
-        # Auto-add missing path parameters
-        for param in path_params - defined_params:
-            parameters.append({
-                "name": param,
-                "in": "path",
-                "required": True,
-                "type": "string"
-            })
-
-        # Update parameters in operation details
-        details["parameters"] = parameters
-
-        # Create a minimal Swagger spec for the individual operation
-        operation_swagger = {
-            "swagger": "2.0",
-            "info": swagger.get("info", {}),
-            "host": swagger.get("host"),
-            "basePath": swagger.get("basePath"),
-            "schemes": swagger.get("schemes", ["https"]),
-            "paths": {
-                path: {
-                    method: details
-                }
-            }
+        operation_data = {
+            "path": path,
+            "method": method_upper,
+            "operationId": operation.get("operationId", f"{method_upper}_{safe_path}"),
+            "summary": operation.get("summary", ""),
+            "parameters": operation.get("parameters", []),
+            "responses": operation.get("responses", {}),
+            "requestBody": operation.get("requestBody", None)
         }
 
-        with open(filepath, "w") as op_file:
-            json.dump(operation_swagger, op_file, indent=2)
+        with open(os.path.join(OUTPUT_DIR, filename), "w") as f:
+            json.dump(operation_data, f, indent=2)
 
         print(f"✔ Created: {filename}")
