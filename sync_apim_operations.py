@@ -1,56 +1,34 @@
 import os
 import json
+import glob
 import subprocess
 
-split_dir = "./split"
-resource_group = os.environ["APIM_RESOURCE_GROUP"]
-service_name = os.environ["APIM_SERVICE_NAME"]
-api_id = os.environ["APIM_API_NAME"]
+apim_rg = os.environ["APIM_RESOURCE_GROUP"]
+apim_service = os.environ["APIM_SERVICE_NAME"]
+apim_api = os.environ["APIM_API_NAME"]
 
-def operation_exists(operation_id):
-    result = subprocess.run([
-        "az", "apim", "api", "operation", "show",
-        "--resource-group", resource_group,
-        "--service-name", service_name,
-        "--api-id", api_id,
-        "--operation-id", operation_id
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    return result.returncode == 0
-
-for filename in os.listdir(split_dir):
-    if not filename.endswith(".json"):
-        continue
-
-    filepath = os.path.join(split_dir, filename)
-    with open(filepath, "r") as f:
+for filepath in glob.glob("split/*.json"):
+    with open(filepath) as f:
         data = json.load(f)
 
-    method = list(data["paths"].values())[0]
-    method_name = list(method.keys())[0].upper()
+    path = list(data["paths"].keys())[0]
+    method = list(data["paths"][path].keys())[0].upper()
+    operation_id = os.path.splitext(os.path.basename(filepath))[0]
 
-    url_template = list(data["paths"].keys())[0]
-    operation_id = filename.replace(".json", "")
-    display_name = operation_id
-
-    exists = operation_exists(operation_id)
-
-    cmd = [
-        "az", "apim", "api", "operation", "update" if exists else "create",
-        "--resource-group", resource_group,
-        "--service-name", service_name,
-        "--api-id", api_id,
+    # Create or update operation
+    print(f"📤 Syncing operation: {operation_id}")
+    result = subprocess.run([
+        "az", "apim", "api", "operation", "create",
+        "--resource-group", apim_rg,
+        "--service-name", apim_service,
+        "--api-id", apim_api,
         "--operation-id", operation_id,
-        "--display-name", display_name,
-        "--method", method_name,
-        "--url-template", url_template,
-        "--description", "Auto-synced via pipeline"
-    ]
+        "--display-name", operation_id,
+        "--method", method,
+        "--url-template", path
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-    print(f"{'🔁 Updating' if exists else '➕ Creating'} operation: {operation_id}")
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode != 0:
-        print(f"❌ Failed: {operation_id}")
-        print(result.stderr.decode())
-    else:
+    if result.returncode == 0:
         print(f"✅ Synced: {operation_id}")
+    else:
+        print(f"❌ Failed: {operation_id}\n{result.stderr}")
