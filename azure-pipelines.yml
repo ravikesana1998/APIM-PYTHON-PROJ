@@ -44,7 +44,6 @@ stages:
           displayName: 'Push Docker Images'
 
 # --------- IMPORT TO APIM -------- #
-# --------- IMPORT TO APIM -------- #
 - stage: ImportOpenAPI
   displayName: 'Import Swagger into APIM'
   dependsOn: Push
@@ -59,6 +58,7 @@ stages:
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
+              set -e
               cd $(Build.SourcesDirectory)
 
               echo "📥 Downloading Swagger..."
@@ -92,7 +92,8 @@ stages:
               export APIM_RESOURCE_GROUP=$(apimResourceGroup)
               export APIM_SERVICE_NAME=$(apimName)
               export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-              export APIM_SWAGGER_URL=https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net
+              export APIM_SWAGGER_URL=$(swaggerUrl)
+
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
 
