@@ -28,12 +28,12 @@ namespace MG.Controllers
 				return BadRequest(ex.Message);
 			}
 		}
-		[HttpGet]
-		public async Task<ActionResult> GetUsersManagerbyEmail(string email)
-		{
-			var response = await _usersBLL.GetUsersManagerbyEmail(email);
-			return Ok(response);
-		}
+		// [HttpGet]
+		// public async Task<ActionResult> GetUsersManagerbyEmail(string email)
+		// {
+		// 	var response = await _usersBLL.GetUsersManagerbyEmail(email);
+		// 	return Ok(response);
+		// }
 
 		// [HttpPost]
 		// public async Task<ActionResult> CreateCalendarEvent(CalendarEventViewModel Calendar)
