@@ -9,7 +9,7 @@ subscription_id = os.environ["APIM_SUBSCRIPTION_ID"]
 resource_group = os.environ["APIM_RESOURCE_GROUP"]
 service_name = os.environ["APIM_SERVICE_NAME"]
 api_name = os.environ["APIM_API_NAME"]
-swagger_url = os.environ["APIM_SWAGGER_URL"]
+swagger_url = os.environ.get("SWAGGER_URL") or os.environ.get("APIM_SWAGGER_URL")
 
 # Authenticate
 credential = DefaultAzureCredential()
