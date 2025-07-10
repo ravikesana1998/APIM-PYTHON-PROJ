@@ -92,7 +92,8 @@ stages:
               export APIM_RESOURCE_GROUP=$(apimResourceGroup)
               export APIM_SERVICE_NAME=$(apimName)
               export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-              export SWAGGER_URL=$(swaggerUrl)
+              export APIM_SWAGGER_URL=$(swaggerUrl)
+
 
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
