@@ -2,23 +2,42 @@ import os
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
 
-subscription_id = os.environ["APIM_SUBSCRIPTION_ID"]
-resource_group = os.environ["APIM_RESOURCE_GROUP"]
-service_name = os.environ["APIM_SERVICE_NAME"]
-api_id = os.environ["APIM_API_NAME"]
+SUBSCRIPTION_ID = os.environ["APIM_SUBSCRIPTION_ID"]
+RESOURCE_GROUP = os.environ["APIM_RESOURCE_GROUP"]
+SERVICE_NAME = os.environ["APIM_SERVICE_NAME"]
+API_ID = os.environ["APIM_API_NAME"]
 
-client = ApiManagementClient(DefaultAzureCredential(), subscription_id)
+def get_apim_operations():
+    credential = DefaultAzureCredential()
+    client = ApiManagementClient(credential, SUBSCRIPTION_ID)
+    return list(client.api_operation.list_by_api(RESOURCE_GROUP, SERVICE_NAME, API_ID))
 
-if not os.path.exists("stale_operations.txt"):
-    print("✅ No stale operations to delete.")
-    exit(0)
+def get_split_operations():
+    from os import listdir
+    return set(f.replace(".json", "") for f in listdir("split") if f.endswith(".json"))
 
-with open("stale_operations.txt") as f:
-    for line in f:
-        method, url_template = line.strip().split(" ", 1)
-        operation_id = f"{method}_{url_template.strip('/').replace('/', '_').replace('{','').replace('}','')}"
-        try:
-            client.api_operation.delete(resource_group, service_name, api_id, operation_id, if_match="*")
-            print(f"🗑️ Deleted stale operation: {operation_id}")
-        except Exception as e:
-            print(f"⚠️ Failed to delete operation {operation_id}: {e}")
+def delete_operation(op_id):
+    print(f"🗑️ Deleting stale operation: {op_id}")
+    credential = DefaultAzureCredential()
+    client = ApiManagementClient(credential, SUBSCRIPTION_ID)
+    client.api_operation.delete(
+        RESOURCE_GROUP,
+        SERVICE_NAME,
+        API_ID,
+        op_id,
+        if_match="*"
+    )
+
+def main():
+    print("🧹 Cleaning up stale operations from APIM...")
+    apim_ops = get_apim_operations()
+    split_ops = get_split_operations()
+
+    stale_ops = [op for op in apim_ops if op.name not in split_ops]
+    print(f"🔍 Found {len(stale_ops)} stale operations to delete.")
+
+    for op in stale_ops:
+        delete_operation(op.name)
+
+if __name__ == "__main__":
+    main()
