@@ -35,7 +35,6 @@ stages:
           inputs:
             command: login
             containerRegistry: $(dockerRegistryServiceConnection)
-
         - script: |
             docker push $(imageNameWithTag)
             docker push $(imageNameLatest)
@@ -46,20 +45,28 @@ stages:
   dependsOn: Push
   jobs:
     - job: ImportSwagger
-      displayName: 'Run Swagger Split, Cleanup, and Import'
+      displayName: 'Run Swagger Sync to APIM'
       steps:
+        - task: UsePythonVersion@0
+          inputs:
+            versionSpec: '3.x'
+            addToPath: true
+
+        - script: |
+            pip install azure-identity azure-mgmt-apimanagement
+          displayName: 'Install Python Dependencies'
+
         - task: AzureCLI@2
-          displayName: 'Run Swagger Split, Cleanup, and Import'
+          displayName: 'Run Swagger Split, Validate, Cleanup, and Sync'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
               cd $(Build.SourcesDirectory)
-              pip install -r requirements.txt || true
 
               echo "📥 Downloading Swagger..."
-              curl -sSL $(swaggerUrl) -o swagger.json
+              curl -sSL "$(swaggerUrl)" -o swagger.json
 
               echo "🔨 Splitting Swagger..."
               python3 split_swagger_by_method.py
@@ -89,7 +96,8 @@ stages:
               export APIM_RESOURCE_GROUP=$(apimResourceGroup)
               export APIM_SERVICE_NAME=$(apimName)
               export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-              export SWAGGER_URL=$(swaggerUrl)
+              export APIM_SWAGGER_URL=$(swaggerUrl)
+
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
 
