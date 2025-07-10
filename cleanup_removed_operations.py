@@ -7,17 +7,20 @@ resource_group = os.environ["APIM_RESOURCE_GROUP"]
 service_name = os.environ["APIM_SERVICE_NAME"]
 api_id = os.environ["APIM_API_NAME"]
 
-split_dir = "./split"
-local_operation_ids = set(f.replace(".json", "") for f in os.listdir(split_dir) if f.endswith(".json"))
+client = ApiManagementClient(DefaultAzureCredential(), subscription_id)
 
-credential = DefaultAzureCredential()
-client = ApiManagementClient(credential, subscription_id)
-remote_ops = client.api_operation.list_by_api(resource_group, service_name, api_id)
+if not os.path.exists("to_delete.txt"):
+    print("No stale operations to delete.")
+    exit(0)
 
-remote_operation_ids = set(op.name for op in remote_ops)
+with open("to_delete.txt") as f:
+    stale_ops = [line.strip() for line in f if line.strip()]
 
-stale_ops = remote_operation_ids - local_operation_ids
-
-for op_id in stale_ops:
-    print(f"🗑️ Deleting stale operation: {op_id}")
-    client.api_operation.delete(resource_group, service_name, api_id, op_id, if_match="*")
+for entry in stale_ops:
+    method, path = entry.split(" ", 1)
+    op_id = f"{method}_{path.strip('/').replace('/', '_').replace('{', '').replace('}', '')}"
+    try:
+        client.api_operation.delete(resource_group, service_name, api_id, op_id, if_match="*")
+        print(f"🗑️ Deleted: {op_id}")
+    except Exception as e:
+        print(f"❌ Failed to delete {op_id}: {e}")
