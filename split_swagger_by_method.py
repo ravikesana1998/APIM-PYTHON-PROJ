@@ -1,35 +1,35 @@
 import json
 import os
+import requests
 
-# Constants
-SWAGGER_FILE = "swagger.json"
-OUTPUT_DIR = "split"
+swagger_url = os.environ["SWAGGER_URL"]
+output_dir = "./split"
 
-# Create output directory if it doesn't exist
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+print("📥 Downloading Swagger...")
+response = requests.get(swagger_url)
+swagger = response.json()
 
-# Load the Swagger JSON
-with open(SWAGGER_FILE, "r") as f:
-    swagger = json.load(f)
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
 
-paths = swagger.get("paths", {})
-for path, path_item in paths.items():
-    for method, operation in path_item.items():
-        method_upper = method.upper()
-        safe_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
-        filename = f"{method_upper}_{safe_path}.json"
+print("🔨 Splitting Swagger into per-operation files...")
 
-        operation_data = {
+for path, methods in swagger["paths"].items():
+    for method, op_data in methods.items():
+        operation_id = op_data.get("operationId")
+        if not operation_id:
+            operation_id = f"{method.upper()}_{path.strip('/').replace('/', '_').replace('{', '').replace('}', '')}"
+
+        op_object = {
+            "operationId": operation_id,
+            "method": method.upper(),
             "path": path,
-            "method": method_upper,
-            "operationId": operation.get("operationId", f"{method_upper}_{safe_path}"),
-            "summary": operation.get("summary", ""),
-            "parameters": operation.get("parameters", []),
-            "responses": operation.get("responses", {}),
-            "requestBody": operation.get("requestBody", None)
+            "summary": op_data.get("summary", operation_id),
+            "parameters": op_data.get("parameters", [])
         }
 
-        with open(os.path.join(OUTPUT_DIR, filename), "w") as f:
-            json.dump(operation_data, f, indent=2)
+        filename = f"{operation_id}.json"
+        with open(os.path.join(output_dir, filename), "w") as f:
+            json.dump(op_object, f, indent=2)
 
         print(f"✔ Created: {filename}")
