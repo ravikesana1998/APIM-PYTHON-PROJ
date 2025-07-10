@@ -1,3 +1,5 @@
+# azure-pipelines.yml
+
 trigger:
 - main
 
@@ -19,7 +21,6 @@ pool:
   name: 'self-hosted-pool'
 
 stages:
-# ----------- BUILD ----------- #
 - stage: Build
   jobs:
     - job: BuildImage
@@ -27,7 +28,6 @@ stages:
         - script: docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
           displayName: 'Build Docker Image'
 
-# ----------- PUSH ------------ #
 - stage: Push
   dependsOn: Build
   jobs:
@@ -43,7 +43,6 @@ stages:
             docker push $(imageNameLatest)
           displayName: 'Push Docker Images'
 
-# --------- IMPORT TO APIM -------- #
 - stage: ImportOpenAPI
   displayName: 'Import Swagger into APIM'
   dependsOn: Push
@@ -58,7 +57,6 @@ stages:
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
-              set -e
               cd $(Build.SourcesDirectory)
 
               echo "📥 Downloading Swagger..."
@@ -92,8 +90,7 @@ stages:
               export APIM_RESOURCE_GROUP=$(apimResourceGroup)
               export APIM_SERVICE_NAME=$(apimName)
               export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-              export APIM_SWAGGER_URL=$(swaggerUrl)
-
+              export SWAGGER_URL=$(swaggerUrl)
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
 
