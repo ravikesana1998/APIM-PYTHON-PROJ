@@ -37,19 +37,19 @@ namespace MG.Controllers
 		// 	return Ok(response);
 		// }
 
-		[HttpGet("{email}/{messageId}")]
-		public async Task<ActionResult> DownloadMessageasStream(string email, string messageId)
-		{
-			var response = await _mailBll.DownloadMessageasStream(email, messageId);
-			return File(response, "message/rfc822", $"{messageId}.eml");
-		}
+		// [HttpGet("{email}/{messageId}")]
+		// public async Task<ActionResult> DownloadMessageasStream(string email, string messageId)
+		// {
+		// 	var response = await _mailBll.DownloadMessageasStream(email, messageId);
+		// 	return File(response, "message/rfc822", $"{messageId}.eml");
+		// }
 
-		[HttpGet("{email}/{folderName}")]
-		public async Task<ActionResult> GetMessagesbyFolder(string email, string folderName, string? filter, int pageNumber = 1, int pageSize = 10)
-		{
-			var response = await _mailBll.GetMessagesbyFolder(email, folderName, filter, pageNumber, pageSize);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{folderName}")]
+		// public async Task<ActionResult> GetMessagesbyFolder(string email, string folderName, string? filter, int pageNumber = 1, int pageSize = 10)
+		// {
+		// 	var response = await _mailBll.GetMessagesbyFolder(email, folderName, filter, pageNumber, pageSize);
+		// 	return Ok(response);
+		// }
 
 		// [HttpGet("{email}/{messageId}")]
 		// public async Task<ActionResult> GetAttachmentsbyMessageId(string email, string messageId)
@@ -73,12 +73,12 @@ namespace MG.Controllers
 			}
 		}
 
-		[HttpGet("{email}/{parentFolderName}")]
-		public async Task<ActionResult> GetChildFolders(string email, string parentFolderName)
-		{
-			var response = await _mailBll.GetChildFolders(email, parentFolderName);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{parentFolderName}")]
+		// public async Task<ActionResult> GetChildFolders(string email, string parentFolderName)
+		// {
+		// 	var response = await _mailBll.GetChildFolders(email, parentFolderName);
+		// 	return Ok(response);
+		// }
 
 		// [HttpPost]
 		// public async Task<ActionResult> MoveMessage(string email, string messageId, string destinationFolderId)
