@@ -35,18 +35,18 @@ namespace MG.Controllers
 			return Ok(response);
 		}
 
-		[HttpPost]
-		public async Task<ActionResult> CreateCalendarEvent(CalendarEventViewModel Calendar)
-		{
-			await _usersBLL.CreateCalendarEvent(Calendar);
-			return Ok();
-		}
+		// [HttpPost]
+		// public async Task<ActionResult> CreateCalendarEvent(CalendarEventViewModel Calendar)
+		// {
+		// 	await _usersBLL.CreateCalendarEvent(Calendar);
+		// 	return Ok();
+		// }
 
-		[HttpPut("{userEmail}/manager/{managerEmail}")]
-		public async Task<ActionResult> UpdateUsersManagerbyEmail(string userEmail, string managerEmail)
-		{
-			var response = await _usersBLL.UpdateUsersManagerbyEmail(userEmail, managerEmail);
-			return Ok(response);
-		}
+		// [HttpPut("{userEmail}/manager/{managerEmail}")]
+		// public async Task<ActionResult> UpdateUsersManagerbyEmail(string userEmail, string managerEmail)
+		// {
+		// 	var response = await _usersBLL.UpdateUsersManagerbyEmail(userEmail, managerEmail);
+		// 	return Ok(response);
+		// }
 	}
 }
