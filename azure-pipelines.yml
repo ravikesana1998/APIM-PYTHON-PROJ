@@ -2,12 +2,11 @@ trigger:
 - main
 
 variables:
-  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
-  imageRepository: 'pythonrreg'
+  dockerRegistryServiceConnection: 'your-acr-connection-id'
   containerRegistry: 'pythonrreg.azurecr.io'
-  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  imageRepository: 'pythonrreg'
   tag: '$(Build.BuildId)'
-  imageNameWithTag: '$(containerRegistry)/$(imageRepository):$(tag)'
+  imageName: '$(containerRegistry)/$(imageRepository):$(tag)'
   imageNameLatest: '$(containerRegistry)/$(imageRepository):latest'
   swaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   apimName: 'dotnetapi9'
@@ -19,55 +18,17 @@ pool:
   name: 'self-hosted-pool'
 
 stages:
-
-# ----------- BUILD ----------- #
-- stage: Build
-  jobs:
-    - job: BuildImage
-      steps:
-        - script: docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
-          displayName: 'Build Docker Image'
-
-# ----------- PUSH ------------ #
-- stage: Push
-  dependsOn: Build
-  jobs:
-    - job: PushImage
-      steps:
-        - task: Docker@2
-          inputs:
-            command: login
-            containerRegistry: $(dockerRegistryServiceConnection)
-
-        - script: |
-            docker push $(imageNameWithTag)
-            docker push $(imageNameLatest)
-          displayName: 'Push Docker Images'
-
-# ----------- IMPORT ----------- #
-- stage: ImportOpenAPI
-  dependsOn: Push
-  displayName: 'Import Swagger into APIM'
+- stage: ImportToAPIM
   jobs:
     - job: ImportSwagger
-      displayName: 'Run Swagger Split, Cleanup, and Import'
       steps:
         - task: AzureCLI@2
-          displayName: 'Run Python Scripts to Sync APIM'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
-            scriptType: 'bash'
-            scriptLocation: 'inlineScript'
+            scriptType: bash
+            scriptLocation: inlineScript
             inlineScript: |
-              set -e
               cd $(Build.SourcesDirectory)
-
-              echo "🐍 Using system Python version:"
-              python3 --version
-
-              echo "📦 Installing Python dependencies..."
-              pip3 install --upgrade pip
-              pip3 install azure-identity azure-mgmt-apimanagement
 
               echo "📥 Downloading Swagger..."
               curl -sSL "$(swaggerUrl)" -o swagger.json
@@ -76,34 +37,25 @@ stages:
               python3 split_swagger_by_method.py
 
               echo "🛡️ Ensuring base API exists in APIM..."
-              az apim api show \
-                --resource-group $(apimResourceGroup) \
-                --service-name $(apimName) \
-                --api-id $(apimApiName) > /dev/null 2>&1
-
+              az apim api show --resource-group $(apimResourceGroup) --service-name $(apimName) --api-id $(apimApiName) > /dev/null 2>&1
               if [ $? -ne 0 ]; then
-                echo "🔧 Creating base API $(apimApiName)..."
-                az apim api create \
-                  --resource-group $(apimResourceGroup) \
-                  --service-name $(apimName) \
-                  --api-id $(apimApiName) \
-                  --display-name $(apimApiName) \
-                  --path $(apimApiName) \
-                  --protocols https \
-                  --subscription-required false
+                echo "🔧 Creating API..."
+                az apim api create --resource-group $(apimResourceGroup) --service-name $(apimName) \
+                  --api-id $(apimApiName) --display-name $(apimApiName) --path $(apimApiName) \
+                  --protocols https --subscription-required false
               else
                 echo "✅ API $(apimApiName) already exists."
               fi
 
               echo "🧹 Cleaning up stale operations..."
-              export APIM_API_NAME=$(apimApiName)
+              export APIM_SUBSCRIPTION_ID=$(subscriptionId)
               export APIM_RESOURCE_GROUP=$(apimResourceGroup)
               export APIM_SERVICE_NAME=$(apimName)
-              export APIM_SUBSCRIPTION_ID=$(subscriptionId)
+              export APIM_API_NAME=$(apimApiName)
               export SWAGGER_URL=$(swaggerUrl)
 
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
 
-              echo "📦 Syncing Swagger operations to APIM..."
+              echo "📦 Syncing operations..."
               python3 sync_apim_operations.py
