@@ -1,7 +1,7 @@
 import requests
-import os
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
+import os
 
 subscription_id = os.environ["APIM_SUBSCRIPTION_ID"]
 resource_group = os.environ["APIM_RESOURCE_GROUP"]
@@ -13,27 +13,34 @@ def get_operations_from_swagger():
     resp = requests.get(swagger_url)
     resp.raise_for_status()
     swagger = resp.json()
-
-    operations = []
+    ops = set()
     for path, methods in swagger.get("paths", {}).items():
         for method in methods:
-            operations.append(f"{method.upper()} {path}")
-    return set(operations)
+            ops.add(f"{method.upper()} {path}")
+    return ops
 
 def get_operations_from_apim():
-    credential = DefaultAzureCredential()
-    client = ApiManagementClient(credential, subscription_id)
-    ops = client.api_operation.list_by_api(resource_group, service_name, api_id)
-    return set(f"{op.method.upper()} {op.url_template}" for op in ops if op.method)
+    client = ApiManagementClient(DefaultAzureCredential(), subscription_id)
+    operations = client.api_operation.list_by_api(resource_group, service_name, api_id)
+    ops = set()
+    for op in operations:
+        if op.request:
+            ops.add(f"{op.request.method.upper()} {op.request.url_template}")
+    return ops
 
 def main():
-    print("🔍 Comparing Swagger and APIM operations...")
     swagger_ops = get_operations_from_swagger()
     apim_ops = get_operations_from_apim()
 
-    print(f"✅ In both: {len(swagger_ops & apim_ops)}")
-    print(f"➕ In Swagger only: {len(swagger_ops - apim_ops)}")
-    print(f"🗑️ In APIM only: {len(apim_ops - swagger_ops)}")
+    only_in_swagger = swagger_ops - apim_ops
+    only_in_apim = apim_ops - swagger_ops
+
+    with open("to_delete.txt", "w") as f:
+        for op in sorted(only_in_apim):
+            f.write(op + "\n")
+
+    print(f"✅ In Swagger but NOT in APIM: {len(only_in_swagger)}")
+    print(f"🧹 In APIM but NOT in Swagger: {len(only_in_apim)}")
 
 if __name__ == "__main__":
     main()
