@@ -42,11 +42,11 @@ namespace MG.Controllers
 			return Ok();
 		}
 
-		//[HttpPut("{userEmail}/manager/{managerEmail}")]
-		//public async Task<ActionResult> UpdateUsersManagerbyEmail(string userEmail, string managerEmail)
-		//{
-		//	var response = await _usersBLL.UpdateUsersManagerbyEmail(userEmail, managerEmail);
-		//	return Ok(response);
-		//}
+		[HttpPut("{userEmail}/manager/{managerEmail}")]
+		public async Task<ActionResult> UpdateUsersManagerbyEmail(string userEmail, string managerEmail)
+		{
+			var response = await _usersBLL.UpdateUsersManagerbyEmail(userEmail, managerEmail);
+			return Ok(response);
+		}
 	}
 }
