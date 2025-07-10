@@ -1,35 +1,34 @@
-import json
 import os
-import requests
+import json
+import argparse
 
-swagger_url = os.environ["SWAGGER_URL"]
-output_dir = "./split"
+parser = argparse.ArgumentParser()
+parser.add_argument("--swagger-url", required=True)
+args = parser.parse_args()
 
-print("📥 Downloading Swagger...")
-response = requests.get(swagger_url)
-swagger = response.json()
+swagger_url = args.swagger_url
+swagger_json_path = 'swagger.json'
 
-if not os.path.exists(output_dir):
-    os.makedirs(output_dir)
+# Download Swagger file
+os.system(f'curl -sSL "{swagger_url}" -o {swagger_json_path}')
 
-print("🔨 Splitting Swagger into per-operation files...")
+# Load and split by method
+with open(swagger_json_path) as f:
+    swagger = json.load(f)
 
-for path, methods in swagger["paths"].items():
-    for method, op_data in methods.items():
-        operation_id = op_data.get("operationId")
-        if not operation_id:
-            operation_id = f"{method.upper()}_{path.strip('/').replace('/', '_').replace('{', '').replace('}', '')}"
+paths = swagger.get("paths", {})
+os.makedirs("split", exist_ok=True)
 
-        op_object = {
-            "operationId": operation_id,
+for path, methods in paths.items():
+    for method, operation in methods.items():
+        operation_id = operation.get("operationId", f"{method}_{path.strip('/').replace('/', '_')}")
+        filename = f"{method.upper()}_{path.strip('/').replace('/', '_')}.json"
+        output = {
             "method": method.upper(),
             "path": path,
-            "summary": op_data.get("summary", operation_id),
-            "parameters": op_data.get("parameters", [])
+            "operationId": operation_id,
+            "operation": operation
         }
-
-        filename = f"{operation_id}.json"
-        with open(os.path.join(output_dir, filename), "w") as f:
-            json.dump(op_object, f, indent=2)
-
+        with open(os.path.join("split", filename), "w") as out:
+            json.dump(output, out, indent=2)
         print(f"✔ Created: {filename}")
