@@ -19,7 +19,7 @@ def main():
     client = ApiManagementClient(credential, SUBSCRIPTION_ID)
 
     for filename in os.listdir():
-        if not filename.endswith(".json"):
+        if not filename.endswith(".json") or filename == "swagger.json":
             continue
 
         with open(filename, "r") as f:
@@ -32,7 +32,6 @@ def main():
 
         print(f"📤 Syncing operation: {operation_id}")
 
-        # Extract {parameters} from path
         param_names = extract_template_parameters(url_path)
         template_parameters = [
             ParameterContract(
@@ -45,7 +44,7 @@ def main():
         ]
 
         request = RequestContract(
-            description=op_data.get("summary", ""),
+            description=op_data.get("summary", operation_id),
             query_parameters=[],
             headers=[]
         )
