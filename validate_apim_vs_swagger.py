@@ -8,7 +8,7 @@ subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
 resource_group = os.environ["APIM_RESOURCE_GROUP"]
 apim_name = os.environ["APIM_NAME"]
 api_id = os.environ["APIM_API_NAME"]
-print(api_id)
+# print(api_id)
 swagger_url = os.environ["swaggerUrl"]
 
 print("🔎 Validating APIM operations against Swagger...")
