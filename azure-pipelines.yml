@@ -1,5 +1,3 @@
-# azure-pipelines.yml
-
 trigger:
 - main
 
@@ -58,9 +56,10 @@ stages:
             scriptLocation: 'inlineScript'
             inlineScript: |
               cd $(Build.SourcesDirectory)
+              pip install -r requirements.txt || true
 
               echo "📥 Downloading Swagger..."
-              curl -sSL "$(swaggerUrl)" -o swagger.json
+              curl -sSL $(swaggerUrl) -o swagger.json
 
               echo "🔨 Splitting Swagger..."
               python3 split_swagger_by_method.py
