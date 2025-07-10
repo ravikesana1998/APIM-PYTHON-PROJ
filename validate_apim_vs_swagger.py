@@ -1,15 +1,15 @@
-# validate_apim_vs_swagger.py
+# validate_apim_vs_swagger.py (no SDK version)
 
 import requests
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.apimanagement import ApiManagementClient
+import subprocess
+import os
 
 # ---------- CONFIG ----------
-SUBSCRIPTION_ID = '85b61d1d-92dd-4311-90eb-4f3e1263adca'
-RESOURCE_GROUP = 'rg-23-6'
-SERVICE_NAME = 'python-api'
-API_ID = 'python-api'
-SWAGGER_URL = 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
+SUBSCRIPTION_ID = os.environ.get("APIM_SUBSCRIPTION_ID")
+RESOURCE_GROUP = os.environ.get("APIM_RESOURCE_GROUP")
+SERVICE_NAME = os.environ.get("APIM_SERVICE_NAME")
+API_ID = os.environ.get("APIM_API_NAME")
+SWAGGER_URL = os.environ.get("APIM_SWAGGER_URL") + "/swagger/v1/swagger.json"
 # ----------------------------
 
 def get_operations_from_swagger(swagger_url):
@@ -24,10 +24,22 @@ def get_operations_from_swagger(swagger_url):
     return set(operations)
 
 def get_operations_from_apim():
-    credential = DefaultAzureCredential()
-    client = ApiManagementClient(credential, SUBSCRIPTION_ID)
-    operations = client.api_operation.list_by_api(RESOURCE_GROUP, SERVICE_NAME, API_ID)
-    return set(f"{op.request.method.upper()} {op.request.url_template}" for op in operations)
+    cmd = [
+        "az", "apim", "api", "operation", "list",
+        "--resource-group", RESOURCE_GROUP,
+        "--service-name", SERVICE_NAME,
+        "--api-id", API_ID,
+        "--subscription", SUBSCRIPTION_ID,
+        "--query", "[].{method: method, urlTemplate: urlTemplate}",
+        "--output", "tsv"
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    operations = set()
+    for line in result.stdout.strip().split("\n"):
+        if line:
+            method, path = line.split("\t")
+            operations.add(f"{method.upper()} {path}")
+    return operations
 
 def main():
     print("🔍 Comparing Swagger and APIM operations...")
