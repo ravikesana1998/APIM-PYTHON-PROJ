@@ -19,6 +19,8 @@ pool:
   name: 'self-hosted-pool'
 
 stages:
+
+# ----------- BUILD ----------- #
 - stage: Build
   jobs:
     - job: BuildImage
@@ -26,6 +28,7 @@ stages:
         - script: docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
           displayName: 'Build Docker Image'
 
+# ----------- PUSH ------------ #
 - stage: Push
   dependsOn: Build
   jobs:
@@ -35,35 +38,36 @@ stages:
           inputs:
             command: login
             containerRegistry: $(dockerRegistryServiceConnection)
+
         - script: |
             docker push $(imageNameWithTag)
             docker push $(imageNameLatest)
           displayName: 'Push Docker Images'
 
+# ----------- IMPORT ----------- #
 - stage: ImportOpenAPI
-  displayName: 'Import Swagger into APIM'
   dependsOn: Push
+  displayName: 'Import Swagger into APIM'
   jobs:
     - job: ImportSwagger
-      displayName: 'Run Swagger Sync to APIM'
+      displayName: 'Run Swagger Split, Cleanup, and Import'
       steps:
-        - task: UsePythonVersion@0
-          inputs:
-            versionSpec: '3.x'
-            addToPath: true
-
-        - script: |
-            pip install azure-identity azure-mgmt-apimanagement
-          displayName: 'Install Python Dependencies'
-
         - task: AzureCLI@2
-          displayName: 'Run Swagger Split, Validate, Cleanup, and Sync'
+          displayName: 'Run Python Scripts to Sync APIM'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
+              set -e
               cd $(Build.SourcesDirectory)
+
+              echo "🐍 Using system Python version:"
+              python3 --version
+
+              echo "📦 Installing Python dependencies..."
+              pip3 install --upgrade pip
+              pip3 install azure-identity azure-mgmt-apimanagement
 
               echo "📥 Downloading Swagger..."
               curl -sSL "$(swaggerUrl)" -o swagger.json
@@ -96,7 +100,7 @@ stages:
               export APIM_RESOURCE_GROUP=$(apimResourceGroup)
               export APIM_SERVICE_NAME=$(apimName)
               export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-              export APIM_SWAGGER_URL=$(swaggerUrl)
+              export SWAGGER_URL=$(swaggerUrl)
 
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
