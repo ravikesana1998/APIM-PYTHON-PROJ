@@ -7,7 +7,8 @@ subscription_id = os.environ["APIM_SUBSCRIPTION_ID"]
 resource_group = os.environ["APIM_RESOURCE_GROUP"]
 service_name = os.environ["APIM_SERVICE_NAME"]
 api_id = os.environ["APIM_API_NAME"]
-swagger_url = os.environ["SWAGGER_URL"] + "/swagger/v1/swagger.json"
+SWAGGER_URL = os.environ.get("SWAGGER_URL")
+
 
 def get_operations_from_swagger():
     resp = requests.get(swagger_url)
