@@ -2,7 +2,7 @@ trigger:
   - main
 
 variables:
-  dockerRegistryServiceConnection: 'your-acr-service-connection-id'
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
   containerRegistry: 'pythonrreg.azurecr.io'
   imageRepository: 'pythonrreg'
   tag: '$(Build.BuildId)'
@@ -13,7 +13,7 @@ variables:
   apimResourceGroup: 'rg-23-6'
   apimApiName: 'dotnetapi9'
   subscriptionId: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
-  appServiceName: 'pythonapps-e0hmd6eucuf9acg5' # Update this to match your App Service name
+  appServiceName: 'pythonapps' # Update this to match your App Service name
 
 pool:
   name: 'self-hosted-pool'
