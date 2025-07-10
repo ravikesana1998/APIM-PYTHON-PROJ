@@ -1,50 +1,41 @@
 import os
-import json
 import requests
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
 
-# Load environment variables
-subscription_id = os.environ["APIM_SUBSCRIPTION_ID"]
+# Inputs
+subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
 resource_group = os.environ["APIM_RESOURCE_GROUP"]
-service_name = os.environ["APIM_SERVICE_NAME"]
-api_name = os.environ["APIM_API_NAME"]
-swagger_url = os.environ.get("SWAGGER_URL") or os.environ.get("APIM_SWAGGER_URL")
+apim_name = os.environ["APIM_NAME"]
+api_id = os.environ["APIM_API_NAME"]
+swagger_url = os.environ["SWAGGER_URL"]
 
-# Authenticate
+print("🔎 Validating APIM operations against Swagger...")
+
+# Load Swagger
+swagger = requests.get(swagger_url).json()
+swagger_ops = set()
+
+for path, methods in swagger["paths"].items():
+    for method, op_data in methods.items():
+        op_id = op_data.get("operationId")
+        if op_id:
+            swagger_ops.add(op_id)
+
+# Load APIM operations
 credential = DefaultAzureCredential()
 client = ApiManagementClient(credential, subscription_id)
 
-def get_operations_from_apim():
-    operations = client.api_operation.list_by_api(resource_group, service_name, api_name)
-    return set(op.name for op in operations)
+apim_ops = client.api_operation.list_by_api(resource_group, apim_name, api_id)
+apim_op_ids = set(op.name for op in apim_ops)
 
-def get_operations_from_swagger():
-    resp = requests.get(swagger_url)
-    resp.raise_for_status()
-    swagger = resp.json()
-    ops = set()
-    for path, methods in swagger["paths"].items():
-        for method in methods:
-            cleaned = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
-            op_id = f"{method.upper()}_{cleaned or 'root'}"
-            ops.add(op_id)
-    return ops
+in_swagger_not_apim = swagger_ops - apim_op_ids
+in_apim_not_swagger = apim_op_ids - swagger_ops
 
-def main():
-    apim_ops = get_operations_from_apim()
-    swagger_ops = get_operations_from_swagger()
+print("✅ In Swagger but NOT in APIM:", len(in_swagger_not_apim))
+print("🧹 In APIM but NOT in Swagger:", len(in_apim_not_swagger))
 
-    with open("to_delete.txt", "w") as f:
-        for op in apim_ops - swagger_ops:
-            f.write(op + "\n")
-
-    with open("to_add.txt", "w") as f:
-        for op in swagger_ops - apim_ops:
-            f.write(op + "\n")
-
-    print(f"✅ In Swagger but NOT in APIM: {len(swagger_ops - apim_ops)}")
-    print(f"🧹 In APIM but NOT in Swagger: {len(apim_ops - swagger_ops)}")
-
-if __name__ == "__main__":
-    main()
+# Save for cleanup script
+with open("removed_operations.txt", "w") as f:
+    for op in in_apim_not_swagger:
+        f.write(op + "\n")
