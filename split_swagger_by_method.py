@@ -1,30 +1,26 @@
-# Updated split_swagger_by_method.py
-
 import json
 import os
 
-with open("swagger.json", "r") as f:
+with open("swagger.json") as f:
     swagger = json.load(f)
 
 os.makedirs("split", exist_ok=True)
+count = 0
 
 for path, methods in swagger.get("paths", {}).items():
     for method, details in methods.items():
-        clean_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
-        filename = f"{method.upper()}_{clean_path}.json"
-
-        partial_swagger = {
-            "swagger": "2.0",
-            "info": swagger["info"],
-            "paths": {
-                path: {
-                    method: details
-                }
-            },
-            "definitions": swagger.get("definitions", {})
+        op_id = details.get("operationId", f"{method}_{path}")
+        sanitized_id = op_id.replace('/', '_').replace('{', '').replace('}', '').replace(':', '_')
+        filename = f"split/{method.upper()}_{sanitized_id}.json"
+        operation_swagger = {
+            "swagger": swagger.get("swagger"),
+            "info": swagger.get("info"),
+            "paths": {path: {method: details}},
+            "definitions": swagger.get("definitions", {}),
         }
+        with open(filename, "w") as f:
+            json.dump(operation_swagger, f, indent=2)
+        print(f"✔ Created: {os.path.basename(filename)}")
+        count += 1
 
-        with open(os.path.join("split", filename), "w") as out:
-            json.dump(partial_swagger, out, indent=2)
-
-        print(f"✔ Created: {filename}")
+print(f"✅ Total operations split: {count}")
