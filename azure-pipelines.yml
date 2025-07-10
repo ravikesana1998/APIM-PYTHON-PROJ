@@ -2,7 +2,7 @@ trigger:
   - main
 
 variables:
-  dockerRegistryServiceConnection: 'DevopsServiceConnection'  # 👈 Use your actual ACR service connection name here
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'  # 👈 Use your actual ACR service connection name here
   imageRepository: 'pythonrreg'
   containerRegistry: 'pythonrreg.azurecr.io'
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
