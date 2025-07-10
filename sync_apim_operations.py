@@ -1,85 +1,65 @@
 import os
 import json
-import traceback
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.apimanagement import ApiManagementClient
-
-subscription_id = os.environ["APIM_SUBSCRIPTION_ID"]
-resource_group = os.environ["APIM_RESOURCE_GROUP"]
-service_name = os.environ["APIM_SERVICE_NAME"]
-api_id = os.environ["APIM_API_NAME"]
+import subprocess
 
 split_dir = "./split"
-credential = DefaultAzureCredential()
-client = ApiManagementClient(credential, subscription_id)
+apim_api_name = os.environ["APIM_API_NAME"]
+apim_resource_group = os.environ["APIM_RESOURCE_GROUP"]
+apim_service_name = os.environ["APIM_SERVICE_NAME"]
+subscription_id = os.environ["APIM_SUBSCRIPTION_ID"]
 
+# Loop through all split operation files
 for file_name in os.listdir(split_dir):
     if not file_name.endswith(".json"):
         continue
 
+    file_path = os.path.join(split_dir, file_name)
+
     try:
-        with open(os.path.join(split_dir, file_name), "r") as f:
+        with open(file_path, "r") as f:
             data = json.load(f)
 
-        path = data["path"]
-        method = data["method"].lower()
-        operation = data["operation"]
         operation_id = data["operationId"]
+        path = data["path"]
+        method = data["method"]
+        summary = data.get("summary", "")
+        parameters = data.get("parameters", [])
+        request_body = data.get("requestBody")
+        responses = data.get("responses", {})
 
-        # Validate requestBody schema
-        schema = None
-        if "requestBody" in operation and "content" in operation["requestBody"]:
-            content = operation["requestBody"]["content"]
-            if "application/json" in content:
-                schema = content["application/json"].get("schema")
+        # Build --template-parameters argument
+        template_params_args = []
+        for param in parameters:
+            if "name" in param and "in" in param and param["in"] == "path":
+                template_params_args.extend(["--template-parameters", json.dumps(param)])
 
-        # Validate responses
-        responses = {}
-        if "responses" in operation:
-            for code, resp in operation["responses"].items():
-                responses[code] = {"description": resp.get("description", "")}
+        # Create or update the operation
+        print(f"📤 Syncing operation: {file_name}")
 
-        # Handle parameters
-        parameters = []
-        for param in operation.get("parameters", []):
-            if "name" in param and "in" in param:
-                parameters.append({
-                    "name": param["name"],
-                    "in": param["in"],
-                    "required": param.get("required", False),
-                    "type": param.get("schema", {}).get("type", "string")
-                })
+        command = [
+            "az", "apim", "api", "operation", "create",
+            "--resource-group", apim_resource_group,
+            "--service-name", apim_service_name,
+            "--api-id", apim_api_name,
+            "--url-template", path,
+            "--method", method,
+            "--operation-id", operation_id,
+            "--display-name", summary or operation_id,
+            "--subscription-id", subscription_id,
+            "--yes"
+        ]
 
-        operation_contract = {
-            "display_name": operation_id,
-            "method": method.upper(),
-            "url_template": path,
-            "request": {
-                "query_parameters": [p for p in parameters if p["in"] == "query"],
-                "template_parameters": [p for p in parameters if p["in"] == "path"],
-                "headers": [p for p in parameters if p["in"] == "header"]
-            },
-            "responses": responses
-        }
+        # Append parameters
+        command.extend(template_params_args)
 
-        if schema:
-            operation_contract["request"]["representations"] = [{
-                "content_type": "application/json"
-            }]
+        # Run the command
+        result = subprocess.run(command, capture_output=True, text=True)
 
-        print(f"📤 Syncing operation: {operation_id}")
-
-        client.api_operation.create_or_update(
-            resource_group,
-            service_name,
-            api_id,
-            operation_id,
-            operation_contract
-        )
-
-        print(f"✅ Synced: {operation_id}")
+        if result.returncode == 0:
+            print(f"✅ Synced: {file_name}")
+        else:
+            print(f"❌ Failed: {file_name}")
+            print(result.stderr)
 
     except Exception as e:
-        print(f"❌ Failed: {file_name}")
-        print("ERROR:", e)
-        traceback.print_exc()
+        print(f"❌ Exception while processing {file_name}: {e}")
