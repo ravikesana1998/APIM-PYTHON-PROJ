@@ -44,6 +44,7 @@ stages:
           displayName: 'Push Docker Images'
 
 # --------- IMPORT TO APIM -------- #
+# --------- IMPORT TO APIM -------- #
 - stage: ImportOpenAPI
   displayName: 'Import Swagger into APIM'
   dependsOn: Push
@@ -66,6 +67,26 @@ stages:
               echo "🔨 Splitting Swagger..."
               python3 split_swagger_by_method.py
 
+              echo "🛡️ Ensuring base API exists in APIM..."
+              az apim api show \
+                --resource-group $(apimResourceGroup) \
+                --service-name $(apimName) \
+                --api-id $(apimApiName) > /dev/null 2>&1
+
+              if [ $? -ne 0 ]; then
+                echo "🔧 Creating base API $(apimApiName)..."
+                az apim api create \
+                  --resource-group $(apimResourceGroup) \
+                  --service-name $(apimName) \
+                  --api-id $(apimApiName) \
+                  --display-name $(apimApiName) \
+                  --path $(apimApiName) \
+                  --protocols https \
+                  --subscription-required false
+              else
+                echo "✅ API $(apimApiName) already exists."
+              fi
+
               echo "🧹 Cleaning up stale operations..."
               export APIM_API_NAME=$(apimApiName)
               export APIM_RESOURCE_GROUP=$(apimResourceGroup)
@@ -73,7 +94,6 @@ stages:
               export APIM_SUBSCRIPTION_ID=$(subscriptionId)
               export APIM_SWAGGER_URL=https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net
               python3 validate_apim_vs_swagger.py
-
               python3 cleanup_removed_operations.py
 
               echo "📦 Syncing Swagger operations to APIM..."
