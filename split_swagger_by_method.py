@@ -1,30 +1,30 @@
-import json, os
+# Updated split_swagger_by_method.py
 
-with open('swagger.json') as f:
+import json
+import os
+
+with open("swagger.json", "r") as f:
     swagger = json.load(f)
 
-output_dir = 'split'
-os.makedirs(output_dir, exist_ok=True)
+os.makedirs("split", exist_ok=True)
 
-for path, methods in swagger.get('paths', {}).items():
-    for method, operation in methods.items():
-        op_id = operation.get('operationId', f'{method}_{path.strip("/")}')
-        safe_op_id = op_id.replace('/', '_').replace('{', '').replace('}', '').replace('-', '_')
-        operation_spec = {
+for path, methods in swagger.get("paths", {}).items():
+    for method, details in methods.items():
+        clean_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
+        filename = f"{method.upper()}_{clean_path}.json"
+
+        partial_swagger = {
+            "swagger": "2.0",
+            "info": swagger["info"],
             "paths": {
                 path: {
-                    method: operation
+                    method: details
                 }
             },
-            "swagger": "2.0",
-            "info": swagger.get("info", {}),
-            "host": swagger.get("host", ""),
-            "schemes": swagger.get("schemes", []),
-            "basePath": swagger.get("basePath", ""),
-            "consumes": swagger.get("consumes", []),
-            "produces": swagger.get("produces", []),
             "definitions": swagger.get("definitions", {})
         }
-        with open(f"{output_dir}/{method.upper()}_{safe_op_id}.json", "w") as out:
-            json.dump(operation_spec, out, indent=2)
-        print(f"✔ Created: {method.upper()}_{safe_op_id}.json")
+
+        with open(os.path.join("split", filename), "w") as out:
+            json.dump(partial_swagger, out, indent=2)
+
+        print(f"✔ Created: {filename}")
