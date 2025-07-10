@@ -2,7 +2,7 @@ trigger:
   - main
 
 variables:
-  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'  # Replace with actual ACR connection
+  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
   imageRepository: 'pythonrreg'
   containerRegistry: 'pythonrreg.azurecr.io'
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
@@ -11,16 +11,16 @@ variables:
   imageNameLatest: '$(containerRegistry)/$(imageRepository):latest'
   swaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   apimName: 'dotnetapi9'
-  apimResourceGroup: 'rg-23-6'
+  apimResourceGroup: 'rg-23-6'                 # ✅ APIM RG
   apimApiName: 'dotnetapi9'
   subscriptionId: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
   appServiceName: 'pythonapps-e0hmd6eucuf9acg5'
+  appServiceResourceGroup: 'appsvc-rg'         # ✅ correct this if different from APIM RG
 
 pool:
   name: 'self-hosted-pool'
 
 stages:
-
 # ----------- BUILD + PUSH ----------- #
 - stage: BuildAndPush
   jobs:
@@ -49,12 +49,13 @@ stages:
         - task: AzureCLI@2
           displayName: 'Restart App Service + Sync to APIM'
           inputs:
-            azureSubscription: 'DevopsServiceConnection'  # 👈 Replace with your actual service connection name
+            azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
               echo "🔁 Restarting App Service to refresh Swagger..."
-              az webapp restart --name $(appServiceName) --resource-group $(apimResourceGroup)
+              az webapp restart --name $(appServiceName) --resource-group $(appServiceResourceGroup)
+
               echo "⏳ Waiting 15 seconds for App Service to restart..."
               sleep 15
 
@@ -65,7 +66,7 @@ stages:
 
               echo "🔨 Splitting Swagger into per-operation files..."
               mkdir -p ./split
-              python3 split_swagger_by_method.py
+              python3 split_swagger_by_method.py --swagger-url "$(swaggerUrl)"
 
               echo "🛡️ Ensuring API exists in APIM..."
               az apim api show \
@@ -88,12 +89,11 @@ stages:
               fi
 
               echo "📦 Setting environment variables for sync scripts..."
-              export SWAGGER_URL="$(swaggerUrl)"
-              export AZURE_SUBSCRIPTION_ID="$(subscriptionId)"
-              export APIM_NAME="$(apimName)"
-              export APIM_RESOURCE_GROUP="$(apimResourceGroup)"
-              export APIM_API_NAME="$(apimApiName)"
-
+              export AZURE_SUBSCRIPTION_ID=$(subscriptionId)
+              export APIM_NAME=$(apimName)
+              export APIM_RESOURCE_GROUP=$(apimResourceGroup)
+              export APIM_API_NAME=$(apimApiName)
+              export APIM_SWAGGER_URL=$(swaggerUrl)
 
               echo "🧹 Cleaning up stale APIM operations..."
               python3 validate_apim_vs_swagger.py
