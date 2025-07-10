@@ -2,72 +2,79 @@ trigger:
   - main
 
 variables:
-  dockerRegistryServiceConnection: '99c0a625-5f02-4515-b601-ee6f0455d046'
-  containerRegistry: 'pythonrreg.azurecr.io'
+  dockerRegistryServiceConnection: 'DevopsServiceConnection'  # 👈 Use your actual ACR service connection name here
   imageRepository: 'pythonrreg'
+  containerRegistry: 'pythonrreg.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
-  imageName: '$(containerRegistry)/$(imageRepository):$(tag)'
+  imageNameWithTag: '$(containerRegistry)/$(imageRepository):$(tag)'
   imageNameLatest: '$(containerRegistry)/$(imageRepository):latest'
   swaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   apimName: 'dotnetapi9'
   apimResourceGroup: 'rg-23-6'
   apimApiName: 'dotnetapi9'
   subscriptionId: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
-  appServiceName: 'pythonapps' # Update this to match your App Service name
+  appServiceName: 'pythonapps-e0hmd6eucuf9acg5'  # 👈 Your App Service name
 
 pool:
   name: 'self-hosted-pool'
 
 stages:
-  - stage: Build
-    jobs:
-      - job: BuildImage
-        steps:
-          - script: |
-              docker build -t $(imageName) -t $(imageNameLatest) -f Dockerfile .
-            displayName: 'Build Docker Image'
 
-  - stage: Push
-    jobs:
-      - job: PushImage
-        steps:
-          - task: Docker@2
-            inputs:
-              command: login
-              containerRegistry: $(dockerRegistryServiceConnection)
+# ----------- BUILD + PUSH ----------- #
+- stage: BuildAndPush
+  jobs:
+    - job: BuildAndPushImage
+      displayName: 'Build and Push Docker Image'
+      steps:
+        - task: Docker@2
+          displayName: 'Login to ACR'
+          inputs:
+            command: login
+            containerRegistry: $(dockerRegistryServiceConnection)
 
-          - script: |
-              docker push $(imageName)
-              docker push $(imageNameLatest)
-            displayName: 'Push Docker Images'
+        - script: |
+            docker build -t $(imageNameWithTag) -t $(imageNameLatest) -f $(dockerfilePath) .
+            docker push $(imageNameWithTag)
+            docker push $(imageNameLatest)
+          displayName: 'Build and Push Image'
 
-  - stage: ImportToAPIM
-    dependsOn: Push
-    jobs:
-      - job: SyncAPIM
-        steps:
-          - task: AzureCLI@2
-            displayName: 'Restart AppService + Sync Swagger to APIM'
-            inputs:
-              azureSubscription: 'DevopsServiceConnection'
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                echo "♻️ Restarting App Service to ensure latest Swagger is live..."
-                az webapp restart --name $(appServiceName) --resource-group $(apimResourceGroup)
-                echo "✅ Restarted App Service"
+# ----------- SYNC TO APIM ----------- #
+- stage: ImportToAPIM
+  dependsOn: BuildAndPush
+  jobs:
+    - job: RestartAppServiceAndSyncAPIM
+      displayName: 'Restart AppService + Sync Swagger to APIM'
+      steps:
+        - task: AzureCLI@2
+          displayName: 'Restart App Service + Sync to APIM'
+          inputs:
+            azureSubscription: 'DevopsServiceConnection'
+            scriptType: 'bash'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
+              echo "🔁 Restarting App Service to refresh Swagger..."
+              az webapp restart --name $(appServiceName) --resource-group $(apimResourceGroup)
+              echo "⏳ Waiting 15 seconds for App Service to restart..."
+              sleep 15
 
-                echo "📥 Downloading Swagger..."
-                curl -sSL "$(swaggerUrl)" -o swagger.json
+              cd $(Build.SourcesDirectory)
 
-                echo "🔨 Splitting Swagger..."
-                python3 split_swagger_by_method.py
+              echo "📥 Downloading Swagger..."
+              curl -sSL "$(swaggerUrl)" -o swagger.json
 
-                echo "🛡️ Ensuring base API exists in APIM..."
-                az apim api show \
-                  --resource-group $(apimResourceGroup) \
-                  --service-name $(apimName) \
-                  --api-id $(apimApiName) > /dev/null 2>&1 || \
+              echo "🔨 Splitting Swagger into per-operation files..."
+              mkdir -p ./split
+              python3 split_swagger_by_method.py
+
+              echo "🛡️ Ensuring API exists in APIM..."
+              az apim api show \
+                --resource-group $(apimResourceGroup) \
+                --service-name $(apimName) \
+                --api-id $(apimApiName) > /dev/null 2>&1
+
+              if [ $? -ne 0 ]; then
+                echo "🔧 Creating new API $(apimApiName)..."
                 az apim api create \
                   --resource-group $(apimResourceGroup) \
                   --service-name $(apimName) \
@@ -76,24 +83,19 @@ stages:
                   --path $(apimApiName) \
                   --protocols https \
                   --subscription-required false
+              else
+                echo "✅ API $(apimApiName) already exists."
+              fi
 
-                echo "📥 Downloading Swagger..."
-curl -sSL "$(swaggerUrl)" -o swagger.json
+              echo "🧹 Cleaning up stale APIM operations..."
+              export APIM_API_NAME=$(apimApiName)
+              export APIM_RESOURCE_GROUP=$(apimResourceGroup)
+              export APIM_SERVICE_NAME=$(apimName)
+              export APIM_SUBSCRIPTION_ID=$(subscriptionId)
+              export SWAGGER_URL=$(swaggerUrl)
 
-echo "🔨 Splitting Swagger into per-operation files..."
-mkdir -p ./split
-python3 split_swagger_by_method.py
+              python3 validate_apim_vs_swagger.py
+              python3 cleanup_removed_operations.py
 
-echo "🧹 Cleaning up stale APIM operations..."
-export APIM_API_NAME=$(apimApiName)
-export APIM_RESOURCE_GROUP=$(apimResourceGroup)
-export APIM_SERVICE_NAME=$(apimName)
-export APIM_SUBSCRIPTION_ID=$(subscriptionId)
-export SWAGGER_URL=$(swaggerUrl)
-
-python3 validate_apim_vs_swagger.py
-python3 cleanup_removed_operations.py
-
-echo "📦 Syncing Swagger operations to APIM..."
-python3 sync_apim_operations.py
-
+              echo "📦 Syncing Swagger operations to APIM..."
+              python3 sync_apim_operations.py
