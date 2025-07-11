@@ -16,23 +16,27 @@ def get_operation_info(filepath):
     with open(filepath, "r") as f:
         data = json.load(f)
 
-    filename = os.path.basename(filepath)
-    # Example: post_api_SharePoint_AddListItems.json → POST, /api/SharePoint/AddListItems
-    parts = filename.split("_", 2)
-    if len(parts) != 3:
-        raise ValueError(f"Invalid filename format: {filename}")
-    method = parts[0].upper()
-    url_template = "/" + parts[2].replace(".json", "").replace("_", "/")
-
-    operation_id = data.get("operationId")
+    # Expect single path with single method
+    paths = data.get("paths", {})
+    if not paths or len(paths) != 1:
+        raise ValueError(f"Invalid or multiple paths in: {filepath}")
+    
+    path = next(iter(paths))
+    method_dict = paths[path]
+    if not method_dict or len(method_dict) != 1:
+        raise ValueError(f"Invalid or multiple methods in: {filepath}")
+    
+    method = next(iter(method_dict)).upper()
+    operation = method_dict[method.lower()]
+    operation_id = operation.get("operationId")
     if not operation_id:
-        raise ValueError(f"Missing operationId in {filename}")
-
+        raise ValueError(f"Missing operationId in {filepath}")
+    
     return {
         "id": operation_id,
         "method": method,
-        "url_template": url_template,
-        "definition": data,
+        "url_template": path,
+        "definition": operation,
     }
 
 def create_or_update_operation(op):
@@ -50,27 +54,25 @@ def create_or_update_operation(op):
         service_name=SERVICE_NAME,
         api_id=API_ID,
         operation_id=op["id"],
-        parameters={
-            "display_name": op["id"],
-            "method": op["method"],
-            "url_template": op["url_template"],
-            "request": {
-                "query_parameters": [p for p in parameters if p["in"] == "query"],
-                "template_parameters": [p for p in parameters if p["in"] == "path"],
-                "description": request_desc,
-                "representation": [{
-                    "content_type": "application/json",
-                    "schema": req_schema,
-                }] if req_schema else [],
-            },
-            "responses": [
-                {
-                    "status_code": status,
-                    "description": response.get("description", "")
-                }
-                for status, response in responses.items()
-            ]
-        }
+        display_name=op["id"],
+        method=op["method"],
+        url_template=op["url_template"],
+        request={
+            "query_parameters": [p for p in parameters if p["in"] == "query"],
+            "template_parameters": [p for p in parameters if p["in"] == "path"],
+            "description": request_desc,
+            "representations": [{
+                "content_type": "application/json",
+                "schema": req_schema,
+            }] if req_schema else [],
+        },
+        responses=[
+            {
+                "status_code": str(status),
+                "description": response.get("description", "")
+            }
+            for status, response in responses.items()
+        ]
     )
 
 def main():
