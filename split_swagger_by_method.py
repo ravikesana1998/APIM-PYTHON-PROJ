@@ -1,34 +1,51 @@
-import os
 import json
-import argparse
+import os
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--swagger-url", required=True)
-args = parser.parse_args()
-
-swagger_url = args.swagger_url
-swagger_json_path = 'swagger.json'
-
-# Download Swagger file
-os.system(f'curl -sSL "{swagger_url}" -o {swagger_json_path}')
-
-# Load and split by method
-with open(swagger_json_path) as f:
+# Input and output paths
+with open("swagger.json", "r") as f:
     swagger = json.load(f)
 
-paths = swagger.get("paths", {})
-os.makedirs("split", exist_ok=True)
+output_dir = "split_operations"
+os.makedirs(output_dir, exist_ok=True)
 
-for path, methods in paths.items():
+# Loop through paths and methods
+for path, methods in swagger["paths"].items():
     for method, operation in methods.items():
-        operation_id = operation.get("operationId", f"{method}_{path.strip('/').replace('/', '_')}")
-        filename = f"{method.upper()}_{path.strip('/').replace('/', '_')}.json"
-        output = {
-            "method": method.upper(),
-            "path": path,
+        operation_id = operation.get("operationId")
+        if not operation_id:
+            continue
+
+        filename = f"{method.upper()}_{operation_id}.json"
+        output_path = os.path.join(output_dir, filename)
+
+        # Extract path-level parameters
+        path_parameters = []
+        if "parameters" in methods:
+            path_parameters += methods["parameters"]
+        if "parameters" in operation:
+            path_parameters += operation["parameters"]
+
+        # Filter only path params
+        template_parameters = []
+        for param in path_parameters:
+            if param.get("in") == "path":
+                template_parameters.append({
+                    "name": param["name"],
+                    "type": "string",  # assuming string for simplicity
+                    "required": True,
+                    "description": param.get("description", f"Path parameter: {param['name']}")
+                })
+
+        # Create minimal per-operation definition
+        operation_json = {
             "operationId": operation_id,
-            "operation": operation
+            "method": method.upper(),
+            "urlTemplate": path,
+            "templateParameters": template_parameters,
+            "description": operation.get("description", "")
         }
-        with open(os.path.join("split", filename), "w") as out:
-            json.dump(output, out, indent=2)
-        print(f"✔ Created: {filename}")
+
+        with open(output_path, "w") as out_file:
+            json.dump(operation_json, out_file, indent=2)
+
+        print(f"✅ Split: {filename}")
