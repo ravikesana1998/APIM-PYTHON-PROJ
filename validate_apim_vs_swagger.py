@@ -1,42 +1,57 @@
 import os
-import requests
+import json
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
 
-# Inputs
-subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
-resource_group = os.environ["APIM_RESOURCE_GROUP"]
-apim_name = os.environ["APIM_NAME"]
-api_id = os.environ["APIM_API_NAME"]
-# print(api_id)
-swagger_url = os.environ["APIM_SWAGGER_URL"]
+# Required env vars
+SUBSCRIPTION_ID = os.environ["AZURE_SUBSCRIPTION_ID"]
+RESOURCE_GROUP = os.environ["AZURE_RESOURCE_GROUP"]
+SERVICE_NAME = os.environ["AZURE_APIM_NAME"]
+API_ID = os.environ["AZURE_APIM_API_ID"]
+SPLIT_DIR = "split"
 
-print("🔎 Validating APIM operations against Swagger...")
-
-# Load Swagger
-swagger = requests.get(swagger_url).json()
-swagger_ops = set()
-
-for path, methods in swagger["paths"].items():
-    for method, op_data in methods.items():
-        op_id = op_data.get("operationId")
-        if op_id:
-            swagger_ops.add(op_id)
-
-# Load APIM operations
 credential = DefaultAzureCredential()
-client = ApiManagementClient(credential, subscription_id)
+client = ApiManagementClient(credential, SUBSCRIPTION_ID)
 
-apim_ops = client.api_operation.list_by_api(resource_group, apim_name, api_id)
-apim_op_ids = set(op.name for op in apim_ops)
+def get_apim_operation_ids():
+    """Fetch operationIds from APIM."""
+    op_ids = set()
+    pager = client.api_operation.list_by_api(RESOURCE_GROUP, SERVICE_NAME, API_ID)
+    for op in pager:
+        op_ids.add(op.name)
+    return op_ids
 
-in_swagger_not_apim = swagger_ops - apim_op_ids
-in_apim_not_swagger = apim_op_ids - swagger_ops
+def get_local_operation_ids():
+    """Read operationIds from split/<tag>/*.json files."""
+    op_ids = set()
+    for root, _, files in os.walk(SPLIT_DIR):
+        for f in files:
+            if f.endswith(".json"):
+                path = os.path.join(root, f)
+                with open(path, "r") as j:
+                    data = json.load(j)
+                    if "operationId" in data:
+                        op_ids.add(data["operationId"])
+    return op_ids
 
-print("✅ In Swagger but NOT in APIM:", len(in_swagger_not_apim))
-print("🧹 In APIM but NOT in Swagger:", len(in_apim_not_swagger))
+def main():
+    print("🔍 Validating APIM operations against Swagger...")
+    apim_ops = get_apim_operation_ids()
+    swagger_ops = get_local_operation_ids()
 
-# Save for cleanup script
-with open("removed_operations.txt", "w") as f:
-    for op in in_apim_not_swagger:
-        f.write(op + "\n")
+    extra_in_apim = apim_ops - swagger_ops
+    missing_in_apim = swagger_ops - apim_ops
+
+    print(f"✅ Total in Swagger: {len(swagger_ops)}")
+    print(f"✅ Total in APIM: {len(apim_ops)}")
+
+    print(f"\n📌 In Swagger but NOT in APIM: {len(missing_in_apim)}")
+    for op in sorted(missing_in_apim):
+        print(f"➕ {op}")
+
+    print(f"\n📌 In APIM but NOT in Swagger: {len(extra_in_apim)}")
+    for op in sorted(extra_in_apim):
+        print(f"➖ {op}")
+
+if __name__ == "__main__":
+    main()
