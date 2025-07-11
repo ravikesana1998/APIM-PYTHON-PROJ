@@ -46,7 +46,7 @@ stages:
   dependsOn: BuildAndPush
   jobs:
     - job: SyncAPIM
-      displayName: 'Download Swagger + Sync to APIM'
+      displayName: 'Download + Process Swagger & Sync to APIM'
       steps:
         - task: AzureCLI@2
           displayName: 'Download Swagger'
@@ -60,7 +60,7 @@ stages:
               curl -sSL "$(swaggerUrl)" -o swagger.json
 
         - task: Bash@3
-          displayName: 'Add operationId fields to Swagger'
+          displayName: 'Auto-generate operationIds'
           inputs:
             targetType: 'inline'
             script: |
@@ -68,7 +68,7 @@ stages:
               python3 add_operation_ids.py swagger.json
 
         - task: Bash@3
-          displayName: 'Split Swagger into operations'
+          displayName: 'Split Swagger into per-operation files'
           inputs:
             targetType: 'inline'
             script: |
