@@ -23,7 +23,6 @@ def get_operation_info(filepath):
     with open(filepath, "r") as f:
         data = json.load(f)
 
-    # Expect a single path with a single method
     paths = data.get("paths", {})
     if not paths or len(paths) != 1:
         raise ValueError(f"Invalid or multiple paths in: {filepath}")
@@ -49,13 +48,13 @@ def get_operation_info(filepath):
 def create_or_update_operation(op):
     print(f"🔄 Syncing {op['method']} {op['url_template']} ({op['id']})")
 
-    operation_def = op["definition"]
-    parameters = operation_def.get("parameters", [])
-    request_body = operation_def.get("requestBody", {})
-    responses = operation_def.get("responses", {})
+    definition = op["definition"]
+    parameters = definition.get("parameters", [])
+    request_body = definition.get("requestBody", {})
+    responses = definition.get("responses", {})
 
-    template_params = []
-    query_params = []
+    template_parameters = []
+    query_parameters = []
 
     for p in parameters:
         param = ParameterContract(
@@ -66,14 +65,14 @@ def create_or_update_operation(op):
             description=p.get("description", "")
         )
         if p["in"] == "path":
-            template_params.append(param)
+            template_parameters.append(param)
         elif p["in"] == "query":
-            query_params.append(param)
+            query_parameters.append(param)
 
     request_contract = RequestContract(
         description=request_body.get("description", ""),
-        query_parameters=query_params or None,
-        template_parameters=template_params or None,
+        query_parameters=query_parameters or None,
+        template_parameters=template_parameters or None,
         representations=[
             RepresentationContract(
                 content_type="application/json",
@@ -98,12 +97,13 @@ def create_or_update_operation(op):
         responses=response_contracts
     )
 
+    # ✅ Corrected to use positional parameters (not keyword)
     client.api_operation.create_or_update(
-        resource_group_name=RESOURCE_GROUP,
-        service_name=SERVICE_NAME,
-        api_id=API_ID,
-        operation_id=op["id"],
-        parameters=operation_contract  # ✅ Fixed: Required positional argument
+        RESOURCE_GROUP,
+        SERVICE_NAME,
+        API_ID,
+        op["id"],
+        operation_contract  # ✅ Required positional argument
     )
 
 def main():
