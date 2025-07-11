@@ -5,15 +5,22 @@ import os
 with open("swagger.json", "r") as f:
     swagger = json.load(f)
 
-output_dir = "split_operations"
+output_dir = "split"
 os.makedirs(output_dir, exist_ok=True)
+
+split_count = 0
 
 # Loop through paths and methods
 for path, methods in swagger["paths"].items():
     for method, operation in methods.items():
+        if method.lower() not in ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']:
+            continue
+
         operation_id = operation.get("operationId")
         if not operation_id:
-            continue
+            safe_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
+            operation_id = f"{method.lower()}_{safe_path}"
+            print(f"⚠️  Missing operationId – generated: {operation_id}")
 
         filename = f"{method.upper()}_{operation_id}.json"
         output_path = os.path.join(output_dir, filename)
@@ -31,12 +38,11 @@ for path, methods in swagger["paths"].items():
             if param.get("in") == "path":
                 template_parameters.append({
                     "name": param["name"],
-                    "type": "string",  # assuming string for simplicity
+                    "type": "string",
                     "required": True,
                     "description": param.get("description", f"Path parameter: {param['name']}")
                 })
 
-        # Create minimal per-operation definition
         operation_json = {
             "operationId": operation_id,
             "method": method.upper(),
@@ -49,3 +55,6 @@ for path, methods in swagger["paths"].items():
             json.dump(operation_json, out_file, indent=2)
 
         print(f"✅ Split: {filename}")
+        split_count += 1
+
+print(f"\n📊 Total operations split: {split_count}")
