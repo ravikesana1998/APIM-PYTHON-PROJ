@@ -95,7 +95,6 @@ stages:
               export APIM_API_NAME=$(apimApiName)
               export SWAGGER_URL=$(swaggerUrl)
 			  
-
               echo "🧹 Cleaning up stale APIM operations..."
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
