@@ -9,7 +9,7 @@ variables:
   tag: '$(Build.BuildId)'
   imageNameWithTag: '$(containerRegistry)/$(imageRepository):$(tag)'
   imageNameLatest: '$(containerRegistry)/$(imageRepository):latest'
-  SWAGGER_URL: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
+  swaggerurl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   apimName: 'dotnetapi9'
   apimResourceGroup: 'rg-23-6'                 # ✅ APIM RG
   apimApiName: 'dotnetapi9'
