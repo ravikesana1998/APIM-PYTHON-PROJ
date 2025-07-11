@@ -1,103 +1,132 @@
-# import os
-# import json
-# import hashlib
-# import requests
-
-# SWAGGER_URL = "https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json"
-# OUTPUT_DIR = "./split"
-
-# def generate_operation_id(method, path, tag):
-#     base = f"{method}_{path.replace('/', '_')}"
-#     hash_suffix = hashlib.md5(base.encode()).hexdigest()[:8]
-#     return f"{method}_{path.strip('/').replace('/', '_')}_{hash_suffix}"
-
-# def ensure_dir(path):
-#     if not os.path.exists(path):
-#         os.makedirs(path)
-
-# def main():
-#     print("📥 Downloading Swagger...")
-#     response = requests.get(SWAGGER_URL)
-#     response.raise_for_status()
-#     swagger = response.json()
-
-#     components = swagger.get("components", {})
-#     paths = swagger.get("paths", {})
-
-#     ensure_dir(OUTPUT_DIR)
-#     total = 0
-#     generated = []
-
-#     for path, methods in paths.items():
-#         for method, operation in methods.items():
-#             tag = (operation.get("tags") or ["Default"])[0]
-#             operation_id = operation.get("operationId")
-#             if not operation_id:
-#                 operation_id = generate_operation_id(method, path, tag)
-#                 operation["operationId"] = operation_id
-#                 generated.append(operation_id)
-
-#             out_dir = os.path.join(OUTPUT_DIR, tag)
-#             ensure_dir(out_dir)
-#             out_file = os.path.join(out_dir, f"{method.upper()}_{operation_id}.json")
-
-#             new_spec = {
-#                 "openapi": swagger.get("openapi", "3.0.0"),
-#                 "info": swagger.get("info", {}),
-#                 "paths": {
-#                     path: {
-#                         method: operation
-#                     }
-#                 },
-#                 "components": components
-#             }
-
-#             with open(out_file, "w") as f:
-#                 json.dump(new_spec, f, indent=2)
-
-#             print(f"✅ Split: {tag}/{method.upper()}_{operation_id}.json")
-#             total += 1
-
-#     print(f"\n✨ Total operations split: {total}")
-#     if generated:
-#         print("\n⚠️ Missing operationId generated for:")
-#         for op_id in generated:
-#             print(f" - {op_id}")
-
-# if __name__ == "__main__":
-#     main()
 import os
 import json
+import hashlib
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.apimanagement import ApiManagementClient
 
+# Env vars required from pipeline
+SUBSCRIPTION_ID = os.environ["AZURE_SUBSCRIPTION_ID"]
+RESOURCE_GROUP = os.environ["AZURE_RESOURCE_GROUP"]
+SERVICE_NAME = os.environ["AZURE_APIM_NAME"]
+API_ID = os.environ["AZURE_APIM_API_ID"]
 SWAGGER_OPERATIONS_DIR = "./split"
 
-def list_all_operation_files():
+credential = DefaultAzureCredential()
+client = ApiManagementClient(credential, SUBSCRIPTION_ID)
+
+def compute_hash(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
+
+def list_operation_files():
     for root, _, files in os.walk(SWAGGER_OPERATIONS_DIR):
-        for file in files:
-            if file.endswith(".json"):
-                yield os.path.join(root, file)
+        for f in files:
+            if f.endswith(".json"):
+                yield os.path.join(root, f)
+
+def extract_operation_info(swagger_file_path):
+    with open(swagger_file_path, "r") as f:
+        swagger = json.load(f)
+
+    path, path_item = next(iter(swagger["paths"].items()))
+    method, op = next(iter(path_item.items()))
+    operation_id = op.get("operationId")
+
+    return {
+        "file": swagger_file_path,
+        "path": path,
+        "method": method.lower(),
+        "operation_id": operation_id,
+        "definition": op,
+        "hash": compute_hash(op)
+    }
+
+def operation_exists(operation_id):
+    try:
+        op = client.api_operation.get(RESOURCE_GROUP, SERVICE_NAME, API_ID, operation_id)
+        return op
+    except:
+        return None
+
+def get_remote_operation_hash(op):
+    # You can optionally store hashes in a custom tag or use the full operation content
+    return None  # Simplify logic by always updating for now
+
+def create_or_update_operation(info):
+    op_id = info["operation_id"]
+    path = info["path"]
+    method = info["method"]
+    op_def = info["definition"]
+
+    params = op_def.get("parameters", [])
+    responses = op_def.get("responses", {})
+
+    # Simplified request body support
+    request_body = op_def.get("requestBody", {})
+    req_desc = request_body.get("description", "")
+    req_schema = request_body.get("content", {}).get("application/json", {}).get("schema", {})
+
+    print(f"🔄 Syncing operation: {op_id} ({method.upper()} {path})")
+
+    client.api_operation.create_or_update(
+        resource_group_name=RESOURCE_GROUP,
+        service_name=SERVICE_NAME,
+        api_id=API_ID,
+        operation_id=op_id,
+        parameters={
+            "display_name": op_id,
+            "method": method.upper(),
+            "url_template": path,
+            "request": {
+                "query_parameters": [p for p in params if p["in"] == "query"],
+                "template_parameters": [p for p in params if p["in"] == "path"],
+                "description": req_desc,
+                "representation": [{
+                    "content_type": "application/json",
+                    "schema": req_schema,
+                }] if req_schema else [],
+            },
+            "responses": [
+                {
+                    "status_code": status,
+                    "description": response.get("description", "")
+                }
+                for status, response in responses.items()
+            ]
+        }
+    )
 
 def main():
-    operation_files = list(list_all_operation_files())
-    print(f"📁 Found {len(operation_files)} operation files to sync.")
+    operation_files = list(list_operation_files())
+    print(f"📁 Found {len(operation_files)} Swagger operation files to sync.")
+
     if len(operation_files) == 0:
         print("⚠️ No Swagger operation files found. Exiting.")
         return
 
+    synced = 0
     for file_path in operation_files:
-        print(f"🔁 Syncing: {file_path}")
-        # Load and sync each operation JSON to APIM
-        with open(file_path, "r") as f:
-            operation_spec = json.load(f)
-        
-        # DEBUG: show operationId
-        path_obj = list(operation_spec["paths"].values())[0]
-        method = list(path_obj.keys())[0]
-        operation = path_obj[method]
-        operation_id = operation.get("operationId")
-        print(f"   ↳ operationId: {operation_id}")
+        try:
+            info = extract_operation_info(file_path)
+            op_id = info["operation_id"]
+            if not op_id:
+                print(f"⚠️ Skipping: No operationId in {file_path}")
+                continue
 
-        # Call APIM sync (add your sync logic here)
+            existing = operation_exists(op_id)
+            if not existing:
+                print(f"🆕 Creating new operation: {op_id}")
+                create_or_update_operation(info)
+                synced += 1
+            else:
+                # For now, always update. (You can add hash comparison here if needed.)
+                print(f"🔁 Updating existing operation: {op_id}")
+                create_or_update_operation(info)
+                synced += 1
+
+        except Exception as e:
+            print(f"❌ Failed to sync {file_path}: {e}")
+
+    print(f"✅ Sync Summary: {synced} succeeded.")
 
 if __name__ == "__main__":
     main()
