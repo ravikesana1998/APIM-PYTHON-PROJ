@@ -21,8 +21,6 @@ pool:
   name: 'self-hosted-pool'
 
 stages:
-
-# ----------- BUILD + PUSH ----------- #
 - stage: BuildAndPush
   displayName: 'Build and Push Docker Image'
   jobs:
@@ -40,31 +38,36 @@ stages:
             docker push $(imageNameLatest)
           displayName: 'Build and Push Docker Image'
 
-# ----------- SYNC TO APIM ----------- #
 - stage: ImportToAPIM
   displayName: 'Sync Swagger to APIM'
   dependsOn: BuildAndPush
   jobs:
     - job: SyncAPIM
-      displayName: 'Download + Process Swagger & Sync to APIM'
+      displayName: 'Restart App + Sync Swagger to APIM'
       steps:
         - task: AzureCLI@2
-          displayName: 'Download Swagger'
+          displayName: 'Restart App Service (to refresh Swagger)'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
-            scriptType: 'bash'
-            scriptLocation: 'inlineScript'
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              echo "🔁 Restarting App Service..."
+              az webapp restart \
+                --name $(appServiceName) \
+                --resource-group $(appServiceResourceGroup)
+
+        - task: AzureCLI@2
+          displayName: 'Download and Patch Swagger'
+          inputs:
+            azureSubscription: 'DevopsServiceConnection'
+            scriptType: bash
+            scriptLocation: inlineScript
             inlineScript: |
               cd $(Build.SourcesDirectory)
               echo "📥 Downloading Swagger..."
               curl -sSL "$(swaggerUrl)" -o swagger.json
-
-        - task: Bash@3
-          displayName: 'Auto-generate operationIds'
-          inputs:
-            targetType: 'inline'
-            script: |
-              cd $(Build.SourcesDirectory)
+              echo "🛠️ Auto-generating operationId..."
               python3 add_operation_ids.py swagger.json
 
         - task: Bash@3
@@ -81,34 +84,13 @@ stages:
               python3 split_swagger_by_method.py
 
         - task: AzureCLI@2
-          displayName: 'Validate and Sync Swagger to APIM'
+          displayName: 'Validate, Clean, and Sync to APIM'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
-            scriptType: 'bash'
-            scriptLocation: 'inlineScript'
+            scriptType: bash
+            scriptLocation: inlineScript
             inlineScript: |
               cd $(Build.SourcesDirectory)
-
-              echo "🛡️ Checking if API exists in APIM..."
-              az apim api show \
-                --resource-group $(apimResourceGroup) \
-                --service-name $(apimName) \
-                --api-id $(apimApiName) > /dev/null 2>&1
-
-              if [ $? -ne 0 ]; then
-                echo "🔧 Creating new API: $(apimApiName)..."
-                az apim api create \
-                  --resource-group $(apimResourceGroup) \
-                  --service-name $(apimName) \
-                  --api-id $(apimApiName) \
-                  --display-name $(apimApiName) \
-                  --path $(apimApiName) \
-                  --protocols https \
-                  --subscription-required false
-              else
-                echo "✅ API $(apimApiName) already exists."
-              fi
-
               echo "📦 Exporting environment variables..."
               export AZURE_SUBSCRIPTION_ID="$(subscriptionId)"
               export APIM_NAME="$(apimName)"
@@ -120,7 +102,7 @@ stages:
               python3 validate_apim_vs_swagger.py
               python3 cleanup_removed_operations.py
 
-              echo "🚀 Syncing new Swagger operations to APIM..."
+              echo "🚀 Syncing Swagger operations..."
               python3 sync_apim_operations.py
 
               echo "📢 Publishing API revision..."
