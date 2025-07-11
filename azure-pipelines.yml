@@ -27,6 +27,7 @@ stages:
   displayName: 'Build and Push Docker Image'
   jobs:
     - job: BuildAndPushImage
+      displayName: 'Build and Push Docker Image'
       steps:
         - task: Docker@2
           displayName: 'Login to ACR'
@@ -50,7 +51,6 @@ stages:
     - job: ProcessSwagger
       displayName: 'Download + Process Swagger'
       steps:
-
         - task: AzureCLI@2
           displayName: 'Download Swagger from App Service'
           inputs:
@@ -70,11 +70,13 @@ stages:
               cd $(Build.SourcesDirectory)
               python3 add_operation_ids.py swagger.json
 
-        - task: Bash@3
+        - task: AzureCLI@2
           displayName: 'Split Swagger into individual operations'
           inputs:
-            targetType: 'inline'
-            script: |
+            azureSubscription: 'DevopsServiceConnection'
+            scriptType: 'bash'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
               cd $(Build.SourcesDirectory)
               export AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
               export AZURE_RESOURCE_GROUP=$(apimResourceGroup)
