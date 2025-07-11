@@ -69,7 +69,6 @@ stages:
             script: |
               cd $(Build.SourcesDirectory)
               python3 add_operation_ids.py swagger.json
-			  python3 split_swagger_by_method.py swagger.json
 
         - task: AzureCLI@2
           displayName: 'Split Swagger into individual operations'
