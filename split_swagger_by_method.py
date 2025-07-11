@@ -1,60 +1,58 @@
 import json
 import os
+import hashlib
 
-# Load the OpenAPI JSON
+# Load Swagger JSON
 with open("swagger.json", "r") as f:
     swagger = json.load(f)
 
-# Output directory
 output_dir = "split"
 os.makedirs(output_dir, exist_ok=True)
 
 split_count = 0
 
-# Valid HTTP methods
-valid_methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']
-
-# Loop through each path and method
-for path, methods in swagger.get("paths", {}).items():
+# Loop through paths and methods
+for path, methods in swagger["paths"].items():
     for method, operation in methods.items():
-        if method.lower() not in valid_methods:
+        if method.lower() not in ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']:
             continue
 
+        # Use existing operationId if present
         operation_id = operation.get("operationId")
         if not operation_id:
-            safe_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
-            operation_id = f"{method.lower()}_{safe_path}"
+            clean_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
+            # Stable deterministic ID using hash
+            hash_id = hashlib.md5(f"{method.lower()}:{path}".encode()).hexdigest()[:8]
+            operation_id = f"{method.lower()}_{clean_path}_{hash_id}"
             print(f"⚠️  Missing operationId – generated: {operation_id}")
 
-        # Output file name
+        # Detect main folder from path (e.g., SharePoint)
+        top_folder = path.strip("/").split("/")[1] if "/" in path.strip("/") else "general"
+        folder_path = os.path.join(output_dir, top_folder)
+        os.makedirs(folder_path, exist_ok=True)
+
         filename = f"{method.upper()}_{operation_id}.json"
+        output_path = os.path.join(folder_path, filename)
 
-        # Tag-based subfolder (optional)
-        tags = operation.get("tags", ["General"])
-        tag_dir = os.path.join(output_dir, tags[0])
-        os.makedirs(tag_dir, exist_ok=True)
-        output_path = os.path.join(tag_dir, filename)
-
-        # Combine path-level and operation-level parameters
-        all_parameters = []
+        # Combine parameters from path and operation
+        path_parameters = []
         if "parameters" in methods:
-            all_parameters += methods["parameters"]
+            path_parameters += methods["parameters"]
         if "parameters" in operation:
-            all_parameters += operation["parameters"]
+            path_parameters += operation["parameters"]
 
-        # Extract path & query parameters
+        # Filter path parameters
         template_parameters = []
-        for param in all_parameters:
-            if param.get("in") in ["path", "query"]:
+        for param in path_parameters:
+            if param.get("in") == "path":
                 template_parameters.append({
                     "name": param["name"],
                     "type": "string",
-                    "required": param.get("required", False),
-                    "in": param.get("in"),
-                    "description": param.get("description", f"{param.get('in', 'unknown').title()} parameter: {param['name']}")
+                    "required": True,
+                    "description": param.get("description", f"Path parameter: {param['name']}")
                 })
 
-        # Prepare operation JSON
+        # Compose final JSON output
         operation_json = {
             "operationId": operation_id,
             "method": method.upper(),
@@ -63,22 +61,11 @@ for path, methods in swagger.get("paths", {}).items():
             "description": operation.get("description", "")
         }
 
-        # Add request body schema if applicable
-        if "requestBody" in operation:
-            content = operation["requestBody"].get("content", {})
-            for media_type, media in content.items():
-                schema = media.get("schema", {})
-                operation_json["requestBody"] = {
-                    "mediaType": media_type,
-                    "schema": schema.get("$ref", schema)
-                }
-                break  # only one mediaType handled for now
-
         # Write to file
         with open(output_path, "w") as out_file:
             json.dump(operation_json, out_file, indent=2)
 
-        print(f"✅ Split: {os.path.join(tags[0], filename)}")
+        print(f"✅ Split: {top_folder}/{filename}")
         split_count += 1
 
 print(f"\n📊 Total operations split: {split_count}")
