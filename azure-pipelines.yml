@@ -67,7 +67,7 @@ stages:
               curl -sSL "$(swaggerUrl)" -o swagger.json
 
               echo "🔨 Splitting Swagger..."
-              mkdir -p ./split
+              mkdir -p split
               python3 split_swagger_by_method.py --swagger-url "$(swaggerUrl)"
 
               echo "🛡️ Checking if API exists in APIM..."
@@ -103,3 +103,10 @@ stages:
 
               echo "🚀 Syncing new Swagger operations to APIM..."
               python3 sync_apim_operations.py
+
+              echo "📢 Publishing API revision..."
+              az apim api update \
+                --resource-group $(apimResourceGroup) \
+                --service-name $(apimName) \
+                --api-id $(apimApiName) \
+                --set isCurrent=true
