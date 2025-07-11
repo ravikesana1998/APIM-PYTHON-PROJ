@@ -1,66 +1,134 @@
+# sync_apim_operations.py
 import os
 import json
-import subprocess
+import hashlib
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.apimanagement import ApiManagementClient
 
-# Get env vars
-split_dir = "./split"
-apim_name = os.environ["APIM_NAME"]
-apim_rg = os.environ["APIM_RESOURCE_GROUP"]
-apim_api = os.environ["APIM_API_NAME"]
+# Env vars required from pipeline
+SUBSCRIPTION_ID = os.environ["AZURE_SUBSCRIPTION_ID"]
+RESOURCE_GROUP = os.environ["AZURE_RESOURCE_GROUP"]
+SERVICE_NAME = os.environ["AZURE_APIM_NAME"]
+API_ID = os.environ["AZURE_APIM_API_ID"]
+SWAGGER_OPERATIONS_DIR = "./split"
 
-print("📦 Syncing Swagger operations to APIM...")
+credential = DefaultAzureCredential()
+client = ApiManagementClient(credential, SUBSCRIPTION_ID)
 
-synced, failed = [], []
+def compute_hash(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
 
-for file_name in sorted(os.listdir(split_dir)):
-    if not file_name.endswith(".json"):
-        continue
+def list_operation_files():
+    for root, _, files in os.walk(SWAGGER_OPERATIONS_DIR):
+        for f in files:
+            if f.endswith(".json"):
+                yield os.path.join(root, f)
 
-    file_path = os.path.join(split_dir, file_name)
+def extract_operation_info(swagger_file_path):
+    with open(swagger_file_path, "r") as f:
+        swagger = json.load(f)
 
+    path, path_item = next(iter(swagger["paths"].items()))
+    method, op = next(iter(path_item.items()))
+    operation_id = op.get("operationId")
+
+    return {
+        "file": swagger_file_path,
+        "path": path,
+        "method": method.lower(),
+        "operation_id": operation_id,
+        "definition": op,
+        "hash": compute_hash(op)
+    }
+
+def operation_exists(operation_id):
     try:
-        with open(file_path, "r") as f:
-            op = json.load(f)
+        op = client.api_operation.get(RESOURCE_GROUP, SERVICE_NAME, API_ID, operation_id)
+        return op
+    except:
+        return None
 
-        operation_id = op["operationId"]
-        method = op["method"]
-        path = op["urlTemplate"]
-        description = op.get("description", operation_id)
-        template_params = op.get("templateParameters", [])
+def create_or_update_operation(info):
+    op_id = info["operation_id"]
+    path = info["path"]
+    method = info["method"]
+    op_def = info["definition"]
 
-        cmd = [
-            "az", "apim", "api", "operation", "create",
-            "--resource-group", apim_rg,
-            "--service-name", apim_name,
-            "--api-id", apim_api,
-            "--operation-id", operation_id,
-            "--url-template", path,
-            "--method", method,
-            "--display-name", operation_id,
-            "--description", description
-        ]
+    params = op_def.get("parameters", [])
+    responses = op_def.get("responses", {})
 
-        for param in template_params:
-            cmd += ["--template-parameters", json.dumps(param)]
+    # Simplified request body support
+    request_body = op_def.get("requestBody", {})
+    req_desc = request_body.get("description", "")
+    req_schema = request_body.get("content", {}).get("application/json", {}).get("schema", {})
 
-        print(f"📤 Syncing operation: {file_name}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+    print(f"🔄 Syncing operation: {op_id} ({method.upper()} {path})")
 
-        if result.returncode == 0:
-            print(f"✅ Synced: {file_name}")
-            synced.append(file_name)
-        else:
-            print(f"❌ Failed: {file_name}")
-            print("ERROR:", result.stderr.strip())
-            failed.append(file_name)
+    client.api_operation.create_or_update(
+        resource_group_name=RESOURCE_GROUP,
+        service_name=SERVICE_NAME,
+        api_id=API_ID,
+        operation_id=op_id,
+        parameters={
+            "display_name": op_id,
+            "method": method.upper(),
+            "url_template": path,
+            "request": {
+                "query_parameters": [p for p in params if p["in"] == "query"],
+                "template_parameters": [p for p in params if p["in"] == "path"],
+                "description": req_desc,
+                "representation": [{
+                    "content_type": "application/json",
+                    "schema": req_schema,
+                }] if req_schema else [],
+            },
+            "responses": [
+                {
+                    "status_code": status,
+                    "description": response.get("description", "")
+                }
+                for status, response in responses.items()
+            ]
+        }
+    )
 
-    except Exception as e:
-        print(f"❌ Error in {file_name}: {e}")
-        failed.append(file_name)
+def main():
+    print(f"📦 Syncing Swagger operations to APIM...")
 
-# Summary
-print(f"\n📊 Sync Summary: {len(synced)} succeeded, {len(failed)} failed.")
-if failed:
-    print("❌ Failed operations:")
-    for f in failed:
-        print(f"- {f}")
+    if not os.path.exists(SWAGGER_OPERATIONS_DIR):
+        print(f"❌ ERROR: Directory {SWAGGER_OPERATIONS_DIR} does not exist")
+        exit(1)
+
+    operation_files = list(list_operation_files())
+    print(f"📁 Found {len(operation_files)} Swagger operation files to sync.")
+
+    if len(operation_files) == 0:
+        print("⚠️ No Swagger operation files found. Exiting.")
+        return
+
+    synced = 0
+    for file_path in operation_files:
+        try:
+            info = extract_operation_info(file_path)
+            op_id = info["operation_id"]
+            if not op_id:
+                print(f"⚠️ Skipping: No operationId in {file_path}")
+                continue
+
+            existing = operation_exists(op_id)
+            if not existing:
+                print(f"🆕 Creating new operation: {op_id}")
+                create_or_update_operation(info)
+                synced += 1
+            else:
+                print(f"🔁 Updating existing operation: {op_id}")
+                create_or_update_operation(info)
+                synced += 1
+
+        except Exception as e:
+            print(f"❌ Failed to sync {file_path}: {e}")
+
+    print(f"✅ Sync Summary: {synced} operations synced.")
+
+if __name__ == "__main__":
+    main()
