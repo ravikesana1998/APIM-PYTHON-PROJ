@@ -93,7 +93,6 @@ stages:
               export APIM_NAME=$(apimName)
               export APIM_RESOURCE_GROUP=$(apimResourceGroup)
               export APIM_API_NAME=$(apimApiName)
-              # export APIM_SWAGGER_URL=$(swaggerUrl)
               export SWAGGER_URL=$(swaggerUrl)
 			  
 
