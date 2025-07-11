@@ -102,11 +102,11 @@ stages:
               fi
 
               echo "📦 Exporting environment variables..."
-              export AZURE_SUBSCRIPTION_ID=$(subscriptionId)
-              export APIM_NAME=$(apimName)
-              export APIM_RESOURCE_GROUP=$(apimResourceGroup)
-              export APIM_API_NAME=$(apimApiName)
-              export APIM_SWAGGER_URL=$(swaggerUrl)
+              export AZURE_SUBSCRIPTION_ID="$(subscriptionId)"
+              export APIM_NAME="$(apimName)"
+              export APIM_RESOURCE_GROUP="$(apimResourceGroup)"
+              export APIM_API_NAME="$(apimApiName)"
+              export APIM_SWAGGER_URL="$(swaggerUrl)"
 
               echo "🧹 Cleaning up old operations..."
               python3 validate_apim_vs_swagger.py
