@@ -18,10 +18,11 @@ variables:
 pool:
   name: 'self-hosted-pool'
 
+stages:
+
 # ---------------------------------- #
 #    STAGE 1: Build and Push Image   #
 # ---------------------------------- #
-stages:
 - stage: BuildAndPush
   displayName: 'Build and Push Docker Image'
   jobs:
@@ -107,6 +108,10 @@ stages:
               export AZURE_RESOURCE_GROUP=$(apimResourceGroup)
               export AZURE_APIM_NAME=$(apimName)
               export AZURE_APIM_API_ID=$(apimApiName)
+
+              export APIM_RESOURCE_GROUP=$(apimResourceGroup)
+              export APIM_NAME=$(apimName)
+              export APIM_API_NAME=$(apimApiName)
               export APIM_SWAGGER_URL=$(swaggerUrl)
 
               echo "🛡️ Validating APIM vs Swagger..."
