@@ -42,25 +42,19 @@ stages:
 
 # ----------- SYNC TO APIM ----------- #
 - stage: ImportToAPIM
-  displayName: 'Restart App Service and Sync Swagger to APIM'
+  displayName: 'Sync Swagger to APIM'
   dependsOn: BuildAndPush
   jobs:
-    - job: RestartAndSync
-      displayName: 'Restart + Download Swagger + Sync APIM'
+    - job: SyncAPIM
+      displayName: 'Download Swagger + Sync to APIM'
       steps:
         - task: AzureCLI@2
-          displayName: 'Restart App Service and Sync to APIM'
+          displayName: 'Download Swagger and Sync to APIM'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
-              echo "🔁 Restarting App Service..."
-              az webapp restart --name $(appServiceName) --resource-group $(appServiceResourceGroup)
-
-              echo "⏳ Waiting for App Service to become ready..."
-              sleep 15
-
               cd $(Build.SourcesDirectory)
 
               echo "📥 Downloading Swagger..."
