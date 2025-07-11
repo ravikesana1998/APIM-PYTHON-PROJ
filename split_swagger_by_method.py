@@ -1,87 +1,68 @@
-import json
 import os
+import json
 import hashlib
+import requests
 
-# Load Swagger/OpenAPI JSON
-with open("swagger.json", "r") as f:
-    swagger = json.load(f)
+SWAGGER_URL = "https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json"
+OUTPUT_DIR = "./split"
 
-# Output directory
-output_dir = "split"
-os.makedirs(output_dir, exist_ok=True)
+def generate_operation_id(method, path, tag):
+    base = f"{method}_{path.replace('/', '_')}"
+    hash_suffix = hashlib.md5(base.encode()).hexdigest()[:8]
+    return f"{method}_{path.strip('/').replace('/', '_')}_{hash_suffix}"
 
-split_count = 0
-valid_methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']
+def ensure_dir(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
 
-def generate_unique_id(method, path):
-    clean = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
-    hash_part = hashlib.md5(f"{method}_{path}".encode()).hexdigest()[:8]
-    return f"{method}_{clean}_{hash_part}"
+def main():
+    print("📥 Downloading Swagger...")
+    response = requests.get(SWAGGER_URL)
+    response.raise_for_status()
+    swagger = response.json()
 
-# Loop through each path and method
-for path, methods in swagger.get("paths", {}).items():
-    for method, operation in methods.items():
-        if method.lower() not in valid_methods:
-            continue
+    components = swagger.get("components", {})
+    paths = swagger.get("paths", {})
 
-        operation_id = operation.get("operationId")
-        if not operation_id:
-            operation_id = generate_unique_id(method, path)
-            print(f"⚠️  Missing operationId – generated: {operation_id}")
+    ensure_dir(OUTPUT_DIR)
+    total = 0
+    generated = []
 
-        filename = f"{method.upper()}_{operation_id}.json"
+    for path, methods in paths.items():
+        for method, operation in methods.items():
+            tag = (operation.get("tags") or ["Default"])[0]
+            operation_id = operation.get("operationId")
+            if not operation_id:
+                operation_id = generate_operation_id(method, path, tag)
+                operation["operationId"] = operation_id
+                generated.append(operation_id)
 
-        # Organize into tag-based folder
-        tags = operation.get("tags", ["General"])
-        tag_name = tags[0].replace(" ", "").replace("/", "_")
-        tag_dir = os.path.join(output_dir, tag_name)
-        os.makedirs(tag_dir, exist_ok=True)
-        output_path = os.path.join(tag_dir, filename)
+            out_dir = os.path.join(OUTPUT_DIR, tag)
+            ensure_dir(out_dir)
+            out_file = os.path.join(out_dir, f"{method.upper()}_{operation_id}.json")
 
-        # Combine path + operation parameters
-        all_parameters = []
-        if "parameters" in methods:
-            all_parameters += methods["parameters"]
-        if "parameters" in operation:
-            all_parameters += operation["parameters"]
+            new_spec = {
+                "openapi": swagger.get("openapi", "3.0.0"),
+                "info": swagger.get("info", {}),
+                "paths": {
+                    path: {
+                        method: operation
+                    }
+                },
+                "components": components
+            }
 
-        # Extract path/query parameters
-        template_parameters = []
-        for param in all_parameters:
-            if param.get("in") in ["path", "query"]:
-                template_parameters.append({
-                    "name": param["name"],
-                    "type": "string",
-                    "required": param.get("required", False),
-                    "in": param.get("in"),
-                    "description": param.get("description", f"{param.get('in', 'unknown').title()} parameter: {param['name']}")
-                })
+            with open(out_file, "w") as f:
+                json.dump(new_spec, f, indent=2)
 
-        # Prepare operation object
-        operation_json = {
-            "operationId": operation_id,
-            "method": method.upper(),
-            "urlTemplate": path,
-            "templateParameters": template_parameters,
-            "description": operation.get("description", "")
-        }
+            print(f"✅ Split: {tag}/{method.upper()}_{operation_id}.json")
+            total += 1
 
-        # Optional: Add requestBody
-        if "requestBody" in operation:
-            content = operation["requestBody"].get("content", {})
-            for media_type, media in content.items():
-                schema = media.get("schema", {})
-                operation_json["requestBody"] = {
-                    "mediaType": media_type,
-                    "schema": schema.get("$ref", schema)
-                }
-                break  # handle one content type for now
+    print(f"\n✨ Total operations split: {total}")
+    if generated:
+        print("\n⚠️ Missing operationId generated for:")
+        for op_id in generated:
+            print(f" - {op_id}")
 
-        # Save file
-        with open(output_path, "w") as out_file:
-            json.dump(operation_json, out_file, indent=2)
-
-        print(f"✅ Split: {os.path.join(tag_name, filename)}")
-        split_count += 1
-
-print(f"\n📊 Total operations split: {split_count}")
+if __name__ == "__main__":
+    main()
