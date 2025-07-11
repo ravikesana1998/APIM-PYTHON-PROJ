@@ -12,16 +12,24 @@ def add_operation_ids(swagger_path):
     with open(swagger_path, "r") as f:
         swagger = json.load(f)
 
+    modified = False
+
     for path, methods in swagger.get("paths", {}).items():
         for method, operation in methods.items():
             if "operationId" not in operation:
                 base_name = path.strip("/").split("/")[-1]
+                base_name = base_name.replace("{", "").replace("}", "")
                 op_id = f"{method.lower().capitalize()}{camel_case(base_name)}"
                 operation["operationId"] = op_id
-                print(f"✅ Added operationId: {op_id} for {method.upper()} {path}")
+                print(f"➕ Added operationId: {op_id} for {method.upper()} {path}")
+                modified = True
 
-    with open(swagger_path, "w") as f:
-        json.dump(swagger, f, indent=2)
+    if modified:
+        with open(swagger_path, "w") as f:
+            json.dump(swagger, f, indent=2)
+        print("✅ Swagger updated with missing operationId fields.")
+    else:
+        print("✅ All operations already have operationId fields. No changes made.")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
