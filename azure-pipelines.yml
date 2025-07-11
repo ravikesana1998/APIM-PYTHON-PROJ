@@ -49,20 +49,37 @@ stages:
       displayName: 'Download Swagger + Sync to APIM'
       steps:
         - task: AzureCLI@2
-          displayName: 'Download Swagger and Sync to APIM'
+          displayName: 'Download Swagger'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
               cd $(Build.SourcesDirectory)
-
               echo "📥 Downloading Swagger..."
               curl -sSL "$(swaggerUrl)" -o swagger.json
 
-              echo "🔨 Splitting Swagger..."
+        - task: Bash@3
+          displayName: 'Split Swagger into operations'
+          inputs:
+            targetType: 'inline'
+            script: |
+              cd $(Build.SourcesDirectory)
+              export AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+              export AZURE_RESOURCE_GROUP=$(apimResourceGroup)
+              export AZURE_APIM_NAME=$(apimName)
+              export AZURE_APIM_API_ID=$(apimApiName)
               mkdir -p split
-              python3 split_swagger_by_method.py --swagger-url "$(swaggerUrl)"
+              python3 split_swagger_by_method.py
+
+        - task: AzureCLI@2
+          displayName: 'Validate and Sync Swagger to APIM'
+          inputs:
+            azureSubscription: 'DevopsServiceConnection'
+            scriptType: 'bash'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
+              cd $(Build.SourcesDirectory)
 
               echo "🛡️ Checking if API exists in APIM..."
               az apim api show \
