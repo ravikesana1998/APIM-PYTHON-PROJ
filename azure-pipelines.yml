@@ -22,7 +22,7 @@ pool:
 
 stages:
 
-# ------------------- BUILD + PUSH STAGE ------------------- #
+# ----------- BUILD + PUSH ----------- #
 - stage: BuildAndPush
   displayName: 'Build and Push Docker Image'
   jobs:
@@ -40,7 +40,7 @@ stages:
             docker push $(imageNameLatest)
           displayName: 'Build and Push Docker Image'
 
-# ------------------- IMPORT TO APIM STAGE ------------------- #
+# ----------- SYNC TO APIM ----------- #
 - stage: ImportToAPIM
   displayName: 'Sync Swagger to APIM'
   dependsOn: BuildAndPush
@@ -48,8 +48,6 @@ stages:
     - job: SyncAPIM
       displayName: 'Download Swagger + Sync to APIM'
       steps:
-
-        # --- Step 1: Download Swagger ---
         - task: AzureCLI@2
           displayName: 'Download Swagger'
           inputs:
@@ -61,21 +59,27 @@ stages:
               echo "📥 Downloading Swagger..."
               curl -sSL "$(swaggerUrl)" -o swagger.json
 
-        # --- Step 2: Split Swagger ---
+        - task: Bash@3
+          displayName: 'Add operationId fields to Swagger'
+          inputs:
+            targetType: 'inline'
+            script: |
+              cd $(Build.SourcesDirectory)
+              python3 add_operation_ids.py swagger.json
+
         - task: Bash@3
           displayName: 'Split Swagger into operations'
           inputs:
             targetType: 'inline'
             script: |
               cd $(Build.SourcesDirectory)
-              export AZURE_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
-              export AZURE_RESOURCE_GROUP="$(apimResourceGroup)"
-              export AZURE_APIM_NAME="$(apimName)"
-              export AZURE_APIM_API_ID="$(apimApiName)"
+              export AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+              export AZURE_RESOURCE_GROUP=$(apimResourceGroup)
+              export AZURE_APIM_NAME=$(apimName)
+              export AZURE_APIM_API_ID=$(apimApiName)
               mkdir -p split
               python3 split_swagger_by_method.py
 
-        # --- Step 3: Validate, Cleanup and Sync to APIM ---
         - task: AzureCLI@2
           displayName: 'Validate and Sync Swagger to APIM'
           inputs:
@@ -105,12 +109,12 @@ stages:
                 echo "✅ API $(apimApiName) already exists."
               fi
 
-              echo "📦 Environment Variables:"
-              echo "AZURE_SUBSCRIPTION_ID=$(subscriptionId)"
-              echo "APIM_NAME=$(apimName)"
-              echo "APIM_RESOURCE_GROUP=$(apimResourceGroup)"
-              echo "APIM_API_NAME=$(apimApiName)"
-              echo "APIM_SWAGGER_URL=$(swaggerUrl)"
+              echo "📦 Exporting environment variables..."
+              export AZURE_SUBSCRIPTION_ID="$(subscriptionId)"
+              export APIM_NAME="$(apimName)"
+              export APIM_RESOURCE_GROUP="$(apimResourceGroup)"
+              export APIM_API_NAME="$(apimApiName)"
+              export APIM_SWAGGER_URL="$(swaggerUrl)"
 
               echo "🧹 Cleaning up old operations..."
               python3 validate_apim_vs_swagger.py
@@ -125,9 +129,3 @@ stages:
                 --service-name $(apimName) \
                 --api-id $(apimApiName) \
                 --set isCurrent=true
-          env:
-            AZURE_SUBSCRIPTION_ID: $(subscriptionId)
-            APIM_NAME: $(apimName)
-            APIM_RESOURCE_GROUP: $(apimResourceGroup)
-            APIM_API_NAME: $(apimApiName)
-            APIM_SWAGGER_URL: $(swaggerUrl)
