@@ -1,82 +1,63 @@
-# sync_apim_operations.py
 import os
 import json
-import hashlib
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
 
-# Env vars required from pipeline
 SUBSCRIPTION_ID = os.environ["AZURE_SUBSCRIPTION_ID"]
 RESOURCE_GROUP = os.environ["AZURE_RESOURCE_GROUP"]
 SERVICE_NAME = os.environ["AZURE_APIM_NAME"]
 API_ID = os.environ["AZURE_APIM_API_ID"]
-SWAGGER_OPERATIONS_DIR = "./split"
+SPLIT_DIR = "split"
 
 credential = DefaultAzureCredential()
 client = ApiManagementClient(credential, SUBSCRIPTION_ID)
 
-def compute_hash(data):
-    return hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
+def get_operation_info(filepath):
+    with open(filepath, "r") as f:
+        data = json.load(f)
 
-def list_operation_files():
-    for root, _, files in os.walk(SWAGGER_OPERATIONS_DIR):
-        for f in files:
-            if f.endswith(".json"):
-                yield os.path.join(root, f)
+    filename = os.path.basename(filepath)
+    # Example: post_api_SharePoint_AddListItems.json → POST, /api/SharePoint/AddListItems
+    parts = filename.split("_", 2)
+    if len(parts) != 3:
+        raise ValueError(f"Invalid filename format: {filename}")
+    method = parts[0].upper()
+    url_template = "/" + parts[2].replace(".json", "").replace("_", "/")
 
-def extract_operation_info(swagger_file_path):
-    with open(swagger_file_path, "r") as f:
-        swagger = json.load(f)
-
-    path, path_item = next(iter(swagger["paths"].items()))
-    method, op = next(iter(path_item.items()))
-    operation_id = op.get("operationId")
+    operation_id = data.get("operationId")
+    if not operation_id:
+        raise ValueError(f"Missing operationId in {filename}")
 
     return {
-        "file": swagger_file_path,
-        "path": path,
-        "method": method.lower(),
-        "operation_id": operation_id,
-        "definition": op,
-        "hash": compute_hash(op)
+        "id": operation_id,
+        "method": method,
+        "url_template": url_template,
+        "definition": data,
     }
 
-def operation_exists(operation_id):
-    try:
-        op = client.api_operation.get(RESOURCE_GROUP, SERVICE_NAME, API_ID, operation_id)
-        return op
-    except:
-        return None
+def create_or_update_operation(op):
+    print(f"🔄 Syncing {op['method']} {op['url_template']} ({op['id']})")
 
-def create_or_update_operation(info):
-    op_id = info["operation_id"]
-    path = info["path"]
-    method = info["method"]
-    op_def = info["definition"]
+    parameters = op["definition"].get("parameters", [])
+    request_body = op["definition"].get("requestBody", {})
+    responses = op["definition"].get("responses", {})
 
-    params = op_def.get("parameters", [])
-    responses = op_def.get("responses", {})
-
-    # Simplified request body support
-    request_body = op_def.get("requestBody", {})
-    req_desc = request_body.get("description", "")
+    request_desc = request_body.get("description", "")
     req_schema = request_body.get("content", {}).get("application/json", {}).get("schema", {})
-
-    print(f"🔄 Syncing operation: {op_id} ({method.upper()} {path})")
 
     client.api_operation.create_or_update(
         resource_group_name=RESOURCE_GROUP,
         service_name=SERVICE_NAME,
         api_id=API_ID,
-        operation_id=op_id,
+        operation_id=op["id"],
         parameters={
-            "display_name": op_id,
-            "method": method.upper(),
-            "url_template": path,
+            "display_name": op["id"],
+            "method": op["method"],
+            "url_template": op["url_template"],
             "request": {
-                "query_parameters": [p for p in params if p["in"] == "query"],
-                "template_parameters": [p for p in params if p["in"] == "path"],
-                "description": req_desc,
+                "query_parameters": [p for p in parameters if p["in"] == "query"],
+                "template_parameters": [p for p in parameters if p["in"] == "path"],
+                "description": request_desc,
                 "representation": [{
                     "content_type": "application/json",
                     "schema": req_schema,
@@ -93,42 +74,28 @@ def create_or_update_operation(info):
     )
 
 def main():
-    print(f"📦 Syncing Swagger operations to APIM...")
-
-    if not os.path.exists(SWAGGER_OPERATIONS_DIR):
-        print(f"❌ ERROR: Directory {SWAGGER_OPERATIONS_DIR} does not exist")
-        exit(1)
-
-    operation_files = list(list_operation_files())
-    print(f"📁 Found {len(operation_files)} Swagger operation files to sync.")
-
-    if len(operation_files) == 0:
-        print("⚠️ No Swagger operation files found. Exiting.")
+    if not os.path.isdir(SPLIT_DIR):
+        print(f"❌ Folder '{SPLIT_DIR}' not found.")
         return
 
-    synced = 0
-    for file_path in operation_files:
+    files = [
+        os.path.join(root, f)
+        for root, _, fs in os.walk(SPLIT_DIR)
+        for f in fs if f.endswith(".json")
+    ]
+
+    print(f"📦 Syncing Swagger operations to APIM...")
+    success = 0
+
+    for file in files:
         try:
-            info = extract_operation_info(file_path)
-            op_id = info["operation_id"]
-            if not op_id:
-                print(f"⚠️ Skipping: No operationId in {file_path}")
-                continue
-
-            existing = operation_exists(op_id)
-            if not existing:
-                print(f"🆕 Creating new operation: {op_id}")
-                create_or_update_operation(info)
-                synced += 1
-            else:
-                print(f"🔁 Updating existing operation: {op_id}")
-                create_or_update_operation(info)
-                synced += 1
-
+            op = get_operation_info(file)
+            create_or_update_operation(op)
+            success += 1
         except Exception as e:
-            print(f"❌ Failed to sync {file_path}: {e}")
+            print(f"❌ Failed to sync {file}: {e}")
 
-    print(f"✅ Sync Summary: {synced} operations synced.")
+    print(f"✅ Sync Summary: {success} operations synced.")
 
 if __name__ == "__main__":
     main()
