@@ -62,7 +62,7 @@ stages:
           displayName: 📂 Clean Split Folder
 
         - script: |
-            $(PYTHON_PATH) scripts/split_swagger_by_method.py $(SWAGGER_FILE) $(SPLIT_DIR)
+            $(PYTHON_PATH) split_swagger_by_method.py $(SWAGGER_FILE) $(SPLIT_DIR)
           displayName: ✂️ Split Swagger into Per-Operation Files
 
         - script: |
@@ -89,7 +89,7 @@ stages:
           displayName: 🧪 Auto-Create API If Missing
 
         - script: |
-            $(PYTHON_PATH) scripts/validate_apim_vs_swagger.py
+            $(PYTHON_PATH) validate_apim_vs_swagger.py
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -98,7 +98,7 @@ stages:
           displayName: 🔒 Validate APIM vs Swagger
 
         - script: |
-            $(PYTHON_PATH) scripts/cleanup_removed_operations.py
+            $(PYTHON_PATH) cleanup_removed_operations.py
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -107,7 +107,7 @@ stages:
           displayName: 🧹 Clean Removed Operations
 
         - script: |
-            $(PYTHON_PATH) scripts/sync_apim_operations.py
+            $(PYTHON_PATH) sync_apim_operations.py
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
