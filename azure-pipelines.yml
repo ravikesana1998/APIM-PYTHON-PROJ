@@ -50,10 +50,6 @@ stages:
         mkdir -p "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
       displayName: 📂 Clean Split Folder
 
-    - script: |
-        echo "📂 List all files in sources directory:"
-        find "$(Build.SourcesDirectory)" -type f
-        displayName: 🧪 Debug: List All Files
 
     - script: |
         echo "➕ Adding missing operationIds..."
