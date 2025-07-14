@@ -1,92 +1,78 @@
-# import json
-# import re
-# import sys
-
-# def camel_case(s):
-#     s = re.sub(r"[^\w\s]", "", s)
-#     s = re.sub(r"[\s]+", "_", s)
-#     parts = s.split("_")
-#     return parts[0] + "".join([p.capitalize() for p in parts[1:]]) if parts else ""
-
-# def add_operation_ids(swagger_path):
-#     with open(swagger_path, "r") as f:
-#         swagger = json.load(f)
-
-#     modified = False
-
-#     for path, methods in swagger.get("paths", {}).items():
-#         for method, operation in methods.items():
-#             if "operationId" not in operation:
-#                 base_name = path.strip("/").split("/")[-1]
-#                 base_name = base_name.replace("{", "").replace("}", "")
-#                 op_id = f"{method.lower().capitalize()}{camel_case(base_name)}"
-#                 operation["operationId"] = op_id
-#                 print(f"➕ Added operationId: {op_id} for {method.upper()} {path}")
-#                 modified = True
-
-#     if modified:
-#         with open(swagger_path, "w") as f:
-#             json.dump(swagger, f, indent=2)
-#         print("✅ Swagger updated with missing operationId fields.")
-#     else:
-#         print("✅ All operations already have operationId fields. No changes made.")
-
-# if __name__ == "__main__":
-#     if len(sys.argv) != 2:
-#         print("Usage: python add_operation_ids.py <swagger-file>")
-#         sys.exit(1)
-#     add_operation_ids(sys.argv[1])
-
-
+import unittest
+import tempfile
 import json
-import re
-import sys
+import os
+from add_operation_ids import add_operation_ids
 
-def sanitize_segment(segment):
-    return re.sub(r"[{}]", "", segment)
+class TestAddOperationIds(unittest.TestCase):
 
-def generate_operation_id(method, path):
-    segments = path.strip("/").split("/")
-    clean_segments = [sanitize_segment(s) for s in segments]
-    return method.capitalize() + "".join([s.capitalize() for s in clean_segments])
+    def setUp(self):
+        self.swagger_without_op_id = {
+            "openapi": "3.0.1",
+            "paths": {
+                "/user/{id}": {
+                    "get": {
+                        "summary": "Get user by ID",
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                        # No operationId
+                    }
+                }
+            }
+        }
 
-def add_operation_ids(swagger_path):
-    with open(swagger_path, "r") as f:
-        swagger = json.load(f)
+        self.swagger_with_op_id = {
+            "openapi": "3.0.1",
+            "paths": {
+                "/user/{id}": {
+                    "get": {
+                        "operationId": "GetUserById",
+                        "summary": "Get user by ID",
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-    modified = False
-    existing_ids = set()
+    def _write_temp_swagger(self, swagger_data):
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode='w+')
+        json.dump(swagger_data, tmp)
+        tmp.close()
+        return tmp.name
 
-    for path, methods in swagger.get("paths", {}).items():
-        for method, operation in methods.items():
-            if "operationId" not in operation or not operation["operationId"].strip():
-                op_id = generate_operation_id(method, path)
+    def test_adds_missing_operation_id(self):
+        tmp_path = self._write_temp_swagger(self.swagger_without_op_id)
 
-                # Ensure uniqueness by appending a counter if needed
-                base_op_id = op_id
-                counter = 1
-                while op_id in existing_ids:
-                    op_id = f"{base_op_id}{counter}"
-                    counter += 1
+        add_operation_ids(tmp_path)
 
-                operation["operationId"] = op_id
-                existing_ids.add(op_id)
+        with open(tmp_path, "r") as f:
+            updated = json.load(f)
 
-                print(f"➕ Added operationId: {op_id} for {method.upper()} {path}")
-                modified = True
-            else:
-                existing_ids.add(operation["operationId"])
+        op_id = updated["paths"]["/user/{id}"]["get"].get("operationId")
+        self.assertIsNotNone(op_id)
+        self.assertTrue(op_id.startswith("GetUser"))
 
-    if modified:
-        with open(swagger_path, "w") as f:
-            json.dump(swagger, f, indent=2)
-        print("✅ Swagger updated with missing operationId fields.")
-    else:
-        print("✅ All operations already have operationId fields. No changes made.")
+        os.remove(tmp_path)
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python add_operation_ids.py <swagger-file>")
-        sys.exit(1)
-    add_operation_ids(sys.argv[1])
+    def test_preserves_existing_operation_id(self):
+        tmp_path = self._write_temp_swagger(self.swagger_with_op_id)
 
+        add_operation_ids(tmp_path)
+
+        with open(tmp_path, "r") as f:
+            updated = json.load(f)
+
+        op_id = updated["paths"]["/user/{id}"]["get"].get("operationId")
+        self.assertEqual(op_id, "GetUserById")
+
+        os.remove(tmp_path)
+
+if __name__ == '__main__':
+    unittest.main()
