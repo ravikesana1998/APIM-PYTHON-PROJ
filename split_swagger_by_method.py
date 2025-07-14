@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     split_swagger_by_method(sys.argv[1], sys.argv[2])
 
-    print(f"  - {op}")
+    print(f"  - {os}")
 
 if __name__ == "__main__":
     main()
