@@ -7,49 +7,61 @@ pool:
   name: 'self-hosted-pool'
 
 variables:
-  # Swagger-related paths
+  # Swagger-related
   targetSwaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   SWAGGER_FILE: 'swagger.json'
   SPLIT_DIR: 'split'
   PYTHON_PATH: '/usr/bin/python3'
 
-  # Azure APIM configuration
+  # Azure APIM
   AZURE_SUBSCRIPTION_ID: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
   AZURE_RESOURCE_GROUP: 'rg-23-6'
   AZURE_APIM_NAME: 'dotnetapi9'
   AZURE_APIM_API_ID: 'dotnetapi9'
 
-# ---------------------------------- #
-#    STAGE 1: Download Swagger       #
-# ---------------------------------- #
 stages:
 
+# ---------------------------------- #
+#       STAGE 1: Download Swagger    #
+# ---------------------------------- #
 - stage: BuildAndDownloadSwagger
-  displayName: ✨ Build & Export Swagger
+  displayName: 📦 Build & Export Swagger
   jobs:
     - job: ExportSwagger
+      displayName: 🌐 Download Swagger
       steps:
         - script: |
             curl -sSL $(targetSwaggerUrl) -o $(SWAGGER_FILE)
           displayName: 📁 Download Swagger JSON
 
         - script: |
-            echo "✅ Downloaded swagger.json:"
-            cat $(SWAGGER_FILE) | head -n 20
+            echo "✅ Swagger Preview:"
+            head -n 30 $(SWAGGER_FILE)
           displayName: 🔍 Preview Swagger Top
 
 # ---------------------------------- #
-#    STAGE 2: Split & Sync to APIM   #
+#      STAGE 2: Split & Sync APIM    #
 # ---------------------------------- #
 - stage: SplitAndSyncToAPIM
   displayName: 🌀 Split + Sync to Azure API Management
   dependsOn: BuildAndDownloadSwagger
   jobs:
     - job: SyncToAPIM
+      displayName: 🔁 Sync Swagger to APIM
       steps:
-        - task: UsePythonVersion@0
-          inputs:
-            versionSpec: '3.x'
+        - script: |
+            echo "Python version:"
+            $(PYTHON_PATH) --version
+          displayName: 🐍 Verify Python on Agent
+
+        - script: |
+            $(PYTHON_PATH) -m pip install --upgrade pip
+            $(PYTHON_PATH) -m pip install -r requirements.txt
+          displayName: 📦 Install Python Dependencies
+
+        - script: |
+            $(PYTHON_PATH) scripts/add_operation_ids.py $(SWAGGER_FILE)
+          displayName: 🏷️ Add Missing OperationIds to Swagger
 
         - script: |
             rm -rf $(SPLIT_DIR)
@@ -58,7 +70,7 @@ stages:
 
         - script: |
             $(PYTHON_PATH) scripts/split_swagger_by_method.py $(SWAGGER_FILE) $(SPLIT_DIR)
-          displayName: ✂️ Split Swagger into Per-Operation Files
+          displayName: ✂️ Split Swagger by Method
 
         - script: |
             echo "🧪 Checking if API exists in APIM..."
@@ -67,7 +79,7 @@ stages:
               --service-name "$(AZURE_APIM_NAME)" \
               --api-id "$(AZURE_APIM_API_ID)" &>/dev/null; then
 
-              echo "➕ API not found. Creating it from Swagger..."
+              echo "➕ API not found. Creating..."
               az apim api import \
                 --resource-group "$(AZURE_RESOURCE_GROUP)" \
                 --service-name "$(AZURE_APIM_NAME)" \
@@ -76,7 +88,7 @@ stages:
                 --display-name "$(AZURE_APIM_API_ID)" \
                 --specification-format OpenApi \
                 --specification-path "$(SWAGGER_FILE)" || {
-                  echo '❌ API import failed'; exit 1;
+                  echo '❌ Failed to import API'; exit 1;
                 }
             else
               echo "✅ API already exists in APIM."
@@ -99,7 +111,7 @@ stages:
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
             AZURE_APIM_NAME: $(AZURE_APIM_NAME)
             AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
-          displayName: 🧹 Clean Removed Operations
+          displayName: 🧹 Cleanup Removed Operations
 
         - script: |
             $(PYTHON_PATH) scripts/sync_apim_operations.py
@@ -108,7 +120,7 @@ stages:
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
             AZURE_APIM_NAME: $(AZURE_APIM_NAME)
             AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
-          displayName: 🚀 Sync Updated Operations to APIM
+          displayName: 🚀 Sync Swagger Operations to APIM
 
         - script: |
             az apim api update \
@@ -116,4 +128,4 @@ stages:
               --service-name "$(AZURE_APIM_NAME)" \
               --api-id "$(AZURE_APIM_API_ID)" \
               --set isCurrent=true
-          displayName: 📢 Publish Latest Revision
+          displayName: 📢 Publish Latest API Revision
