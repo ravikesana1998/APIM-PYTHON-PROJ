@@ -57,7 +57,7 @@ stages:
 
         - script: |
             echo "➕ Adding missing operationIds..."
-            $(PYTHON_PATH) "$(Build.SourcesDirectory)/add_operation_ids.py" "$(Build.SourcesDirectory)/swagger.json"
+            "$PYTHON_PATH" "$(Build.SourcesDirectory)/add_operation_ids.py" "$(Build.SourcesDirectory)/swagger.json"
 
             echo "🔍 Validating operationIds..."
             id_count=$(grep -o '"operationId"' "$(Build.SourcesDirectory)/swagger.json" | wc -l)
@@ -72,7 +72,7 @@ stages:
             echo "🔍 Verifying swagger.json location:"
             ls -l "$(Build.SourcesDirectory)/swagger.json"
 
-            $(PYTHON_PATH) "$(Build.SourcesDirectory)/split_swagger_by_method.py" \
+            "$PYTHON_PATH" "$(Build.SourcesDirectory)/split_swagger_by_method.py" \
               "$(Build.SourcesDirectory)/swagger.json" \
               "$(Build.SourcesDirectory)/split"
           displayName: ✂️ Split Swagger into Per-Operation Files
@@ -101,7 +101,7 @@ stages:
           displayName: 🧪 Auto-Create API If Missing
 
         - script: |
-            $(PYTHON_PATH) "$(Build.SourcesDirectory)/validate_apim_vs_swagger.py"
+            "$PYTHON_PATH" "$(Build.SourcesDirectory)/validate_apim_vs_swagger.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -110,7 +110,7 @@ stages:
           displayName: 🔒 Validate APIM vs Swagger
 
         - script: |
-            $(PYTHON_PATH) "$(Build.SourcesDirectory)/cleanup_removed_operations.py"
+            "$PYTHON_PATH" "$(Build.SourcesDirectory)/cleanup_removed_operations.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -119,7 +119,7 @@ stages:
           displayName: 🧹 Clean Removed Operations
 
         - script: |
-            $(PYTHON_PATH) "$(Build.SourcesDirectory)/sync_apim_operations.py"
+            "$PYTHON_PATH" "$(Build.SourcesDirectory)/sync_apim_operations.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
