@@ -28,12 +28,11 @@ stages:
     - job: ExportSwagger
       steps:
         - script: |
-            curl -sSL $(targetSwaggerUrl) -o "$(Build.SourcesDirectory)/$(SWAGGER_FILE)"
-          displayName: 📁 Download Swagger JSON
-
+            curl -sSL "$targetSwaggerUrl" -o "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
+            displayName: 📁 Download Swagger JSON
         - script: |
             echo "✅ Downloaded swagger.json:"
-            head -n 20 "$(Build.SourcesDirectory)/$(SWAGGER_FILE)"
+            head -n 20 "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
           displayName: 🔍 Preview Swagger Top
 
 # ---------------------------------- #
@@ -46,23 +45,22 @@ stages:
     - job: SyncToAPIM
       steps:
         - script: |
-            rm -rf "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
-            mkdir -p "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
-          displayName: 📂 Clean Split Folder
+            rm -rf "$BUILD_SOURCESDIRECTORY/$SPLIT_DIR"
+            mkdir -p "$BUILD_SOURCESDIRECTORY/$SPLIT_DIR"
+            displayName: 📂 Clean Split Folder
 
         - script: |
             echo "📂 List all files in sources directory:"
-            find "$(Build.SourcesDirectory)" -type f
-          displayName: 🧪 Debug: List All Files
-
+            find "$BUILD_SOURCESDIRECTORY" -type f
+            displayName: 🧪 Debug: List All Files
         - script: |
             echo "➕ Adding missing operationIds..."
-            "$PYTHON_PATH" "$(Build.SourcesDirectory)/add_operation_ids.py" "$(Build.SourcesDirectory)/swagger.json"
+            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/add_operation_ids.py" "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
 
             echo "🔍 Validating operationIds..."
-            id_count=$(grep -o '"operationId"' "$(Build.SourcesDirectory)/swagger.json" | wc -l)
+            id_count=$(grep -o '"operationId"' "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE" | wc -l)
             if [ "$id_count" -eq 0 ]; then
-              echo "❌ No operationIds found in updated Swagger. Failing pipeline."
+              echo "❌ No operationIds found. Failing pipeline."
               exit 1
             fi
             echo "✅ Found $id_count operationIds"
@@ -70,29 +68,29 @@ stages:
 
         - script: |
             echo "🔍 Verifying swagger.json location:"
-            ls -l "$(Build.SourcesDirectory)/swagger.json"
+            ls -l "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
 
-            "$PYTHON_PATH" "$(Build.SourcesDirectory)/split_swagger_by_method.py" \
-              "$(Build.SourcesDirectory)/swagger.json" \
-              "$(Build.SourcesDirectory)/split"
+            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/split_swagger_by_method.py" \
+              "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE" \
+              "$BUILD_SOURCESDIRECTORY/$SPLIT_DIR"
           displayName: ✂️ Split Swagger into Per-Operation Files
 
         - script: |
             echo "🧪 Checking if API exists in APIM..."
             if ! az apim api show \
-              --resource-group "$(AZURE_RESOURCE_GROUP)" \
-              --service-name "$(AZURE_APIM_NAME)" \
-              --api-id "$(AZURE_APIM_API_ID)" &>/dev/null; then
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --service-name "$AZURE_APIM_NAME" \
+              --api-id "$AZURE_APIM_API_ID" &>/dev/null; then
 
               echo "➕ API not found. Creating it from Swagger..."
               az apim api import \
-                --resource-group "$(AZURE_RESOURCE_GROUP)" \
-                --service-name "$(AZURE_APIM_NAME)" \
-                --api-id "$(AZURE_APIM_API_ID)" \
-                --path "$(AZURE_APIM_API_ID)" \
-                --display-name "$(AZURE_APIM_API_ID)" \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --service-name "$AZURE_APIM_NAME" \
+                --api-id "$AZURE_APIM_API_ID" \
+                --path "$AZURE_APIM_API_ID" \
+                --display-name "$AZURE_APIM_API_ID" \
                 --specification-format OpenApi \
-                --specification-path "$(Build.SourcesDirectory)/swagger.json" || {
+                --specification-path "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE" || {
                   echo '❌ API import failed'; exit 1;
                 }
             else
@@ -101,7 +99,7 @@ stages:
           displayName: 🧪 Auto-Create API If Missing
 
         - script: |
-            "$PYTHON_PATH" "$(Build.SourcesDirectory)/validate_apim_vs_swagger.py"
+            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/validate_apim_vs_swagger.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -110,7 +108,7 @@ stages:
           displayName: 🔒 Validate APIM vs Swagger
 
         - script: |
-            "$PYTHON_PATH" "$(Build.SourcesDirectory)/cleanup_removed_operations.py"
+            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/cleanup_removed_operations.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -119,7 +117,7 @@ stages:
           displayName: 🧹 Clean Removed Operations
 
         - script: |
-            "$PYTHON_PATH" "$(Build.SourcesDirectory)/sync_apim_operations.py"
+            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/sync_apim_operations.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -129,8 +127,8 @@ stages:
 
         - script: |
             az apim api update \
-              --resource-group "$(AZURE_RESOURCE_GROUP)" \
-              --service-name "$(AZURE_APIM_NAME)" \
-              --api-id "$(AZURE_APIM_API_ID)" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --service-name "$AZURE_APIM_NAME" \
+              --api-id "$AZURE_APIM_API_ID" \
               --set isCurrent=true
           displayName: 📢 Publish Latest Revision
