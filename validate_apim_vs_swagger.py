@@ -1,33 +1,32 @@
-# scripts/validate_apim_vs_swagger.py
+#!/usr/bin/env python3
+import os, sys, json, subprocess
 
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.apimanagement import ApiManagementClient
-import os
-
-SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
-RESOURCE_GROUP = os.getenv("AZURE_RESOURCE_GROUP")
-SERVICE_NAME = os.getenv("APIM_SERVICE_NAME")
-API_ID = os.getenv("API_ID")  # APIM API being synced
-
-def get_existing_operations():
-    client = ApiManagementClient(DefaultAzureCredential(), SUBSCRIPTION_ID)
-    ops = client.api_operation.list_by_api(RESOURCE_GROUP, SERVICE_NAME, API_ID)
-    return {op.name: op for op in ops}
-
-def get_local_operations(split_dir="swagger/split"):
-    return {
-        f.stem for f in Path(split_dir).glob("*.json")
-    }
+def run(cmd):
+    res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if res.returncode != 0:
+        print(res.stderr)
+        sys.exit(res.returncode)
+    return res.stdout
 
 def main():
-    remote_ops = get_existing_operations()
-    local_ops = get_local_operations()
+    local = json.load(open(sys.argv[1]))
+    sub = os.getenv("AZURE_SUBSCRIPTION_ID")
+    rg = os.getenv("AZURE_RESOURCE_GROUP")
+    svc = os.getenv("AZURE_APIM_NAME")
+    api = os.getenv("AZURE_APIM_API_ID")
 
-    stale_ops = set(remote_ops.keys()) - local_ops
-    if stale_ops:
-        print(f"Stale operations in APIM: {stale_ops}")
-        # Optional: delete them here or in a separate script
+    # Export remote API spec
+    remote = run(f"az apim api export --resource-group {rg} --service-name {svc} --api-id {api} --format openapi-link")
+    remote_spec = json.loads(remote)
+    # Compare operation counts
+    local_ops = sum(len(m) for m in local.get("paths", {}).values())
+    remote_ops = sum(len(m) for m in remote_spec.get("paths", {}).values())
+    print(f"Local operations: {local_ops}, Remote operations: {remote_ops}")
+    if local_ops != remote_ops:
+        print("⚠️ Operation count mismatch! Please investigate.")
+        sys.exit(1)
 
-if __name__ == "__main__":
-    from pathlib import Path
+    print("✅ Local and remote APIs are in sync.")
+
+if __name__ == '__main__':
     main()
