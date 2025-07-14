@@ -65,5 +65,5 @@ if __name__ == "__main__":
 
     print(f"  - {os}")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
