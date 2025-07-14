@@ -1,4 +1,4 @@
-
+# ✅ FINAL VERSION: split_swagger_by_method.py
 import os
 import sys
 import json
@@ -25,7 +25,7 @@ def split_swagger_by_method(swagger_path, output_dir):
         for method, operation in methods.items():
             if "operationId" not in operation or not operation["operationId"].strip():
                 generated_id = generate_operation_id(method, path)
-                print(f"⚠️ Missing operationId for {method.upper()} {path}, generating: {generated_id}")
+                print(f"⚠️ Generating missing operationId for {method.upper()} {path} -> {generated_id}")
                 operation["operationId"] = generated_id
             else:
                 generated_id = sanitize_filename(operation["operationId"])
