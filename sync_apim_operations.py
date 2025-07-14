@@ -2,7 +2,8 @@ import os
 import json
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
-from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
+from azure.mgmt.apimanagement.models import OperationContract, RequestContract, ParameterContract, ResponseContract
+from azure.core.exceptions import ResourceNotFoundError
 
 subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
 resource_group = os.environ["AZURE_RESOURCE_GROUP"]
@@ -10,61 +11,109 @@ apim_name = os.environ["AZURE_APIM_NAME"]
 api_id = os.environ["AZURE_APIM_API_ID"]
 split_dir = os.environ.get("SPLIT_DIR", "./split")
 
-def get_apim_operation_ids():
-    print("🔍 Fetching operation IDs from APIM...")
-    credential = DefaultAzureCredential()
-    client = ApiManagementClient(credential, subscription_id)
+def extract_method_and_path(filename):
+    parts = filename.split("_", 1)
+    if len(parts) != 2:
+        return None, None
+    method = parts[0].lower()
     try:
-        pager = client.api_operation.list_by_api(resource_group, apim_name, api_id)
-        return [op.name for op in pager]
-    except ResourceNotFoundError as e:
-        print(f"⚠️ Cannot retrieve operations from APIM: {e.message}")
-        return []
-    except HttpResponseError as e:
-        print(f"⚠️ HTTP Error while fetching operations from APIM: {e.message}")
-        return []
-    except Exception as e:
-        print(f"⚠️ Unexpected error while fetching operations from APIM: {str(e)}")
-        return []
+        with open(filename, "r") as f:
+            swagger = json.load(f)
+            path = list(swagger["paths"].keys())[0]
+            return method, path
+    except:
+        return method, None
 
-def get_swagger_operation_ids():
-    print("📂 Reading split Swagger files for operation IDs...")
-    ids = []
+def sync_operation(filepath):
+    try:
+        with open(filepath, "r") as f:
+            swagger = json.load(f)
+    except Exception as e:
+        print(f"⚠️ Failed to load {filepath}: {e}")
+        return False
+
+    try:
+        operation_id = swagger.get("operationId")
+        if not operation_id:
+            print(f"⚠️ Skipping file missing metadata: {filepath}")
+            return False
+
+        method, path = extract_method_and_path(filepath)
+        if not path:
+            print(f"⚠️ Could not extract path from {filepath}")
+            return False
+
+        print(f"\n🔄 Syncing {method.upper()} {path} ({operation_id})")
+
+        credential = DefaultAzureCredential()
+        client = ApiManagementClient(credential, subscription_id)
+
+        parameters = []
+        for param in swagger.get("parameters", []):
+            parameters.append(ParameterContract(
+                name=param["name"],
+                required=param.get("required", False),
+                type=param.get("schema", {}).get("type", "string"),
+                description=param.get("description", ""),
+                location=param.get("in")
+            ))
+
+        request = None
+        if "requestBody" in swagger:
+            content = swagger["requestBody"]["content"]
+            if "application/json" in content:
+                schema = content["application/json"].get("schema", {})
+                request = RequestContract(
+                    query_parameters=[p for p in parameters if p.location == "query"],
+                    headers=[],
+                    representations=[{
+                        "content_type": "application/json",
+                        "sample": json.dumps(schema)
+                    }]
+                )
+
+        responses = []
+        for status_code, resp in swagger.get("responses", {}).items():
+            responses.append(ResponseContract(
+                status_code=int(status_code) if status_code.isdigit() else 200,
+                description=resp.get("description", "")
+            ))
+
+        contract = OperationContract(
+            display_name=operation_id,
+            method=method.upper(),
+            url_template=path,
+            request=request,
+            responses=responses,
+            template_parameters=[p for p in parameters if p.location == "path"]
+        )
+
+        client.api_operation.create_or_update(
+            resource_group_name=resource_group,
+            service_name=apim_name,
+            api_id=api_id,
+            operation_id=operation_id,
+            parameters=contract
+        )
+
+        print(f"✅ Synced operation: {operation_id}")
+        return True
+
+    except ResourceNotFoundError as e:
+        print(f"❌ Failed to sync {filepath}: {e.message}")
+        return False
+
+def main():
+    success_count = 0
+    total = 0
     for root, _, files in os.walk(split_dir):
         for file in files:
             if file.endswith(".json"):
-                path = os.path.join(root, file)
-                try:
-                    with open(path, "r") as f:
-                        swagger = json.load(f)
-                        op_id = swagger.get("operationId")
-                        if op_id:
-                            ids.append(op_id)
-                        else:
-                            print(f"⚠️ No operationId found in {path}")
-                except Exception as e:
-                    print(f"⚠️ Error reading {path}: {e}")
-    return ids
-
-def main():
-    swagger_ops = get_swagger_operation_ids()
-    apim_ops = get_apim_operation_ids()
-
-    swagger_set = set(swagger_ops)
-    apim_set = set(apim_ops)
-
-    only_in_swagger = sorted(swagger_set - apim_set)
-    only_in_apim = sorted(apim_set - swagger_set)
-
-    print("✅ Validation Complete")
-    print(f"Total in Swagger: {len(swagger_ops)}")
-    print(f"Total in APIM: {len(apim_ops)}")
-    print(f"In Swagger but NOT in APIM: {len(only_in_swagger)}")
-    for op in only_in_swagger:
-        print(f"  - {op}")
-    print(f"In APIM but NOT in Swagger: {len(only_in_apim)}")
-    for op in only_in_apim:
-        print(f"  - {op}")
+                total += 1
+                full_path = os.path.join(root, file)
+                if sync_operation(full_path):
+                    success_count += 1
+    print(f"\n✅ Sync Summary: {success_count}/{total} operations synced.")
 
 if __name__ == "__main__":
     main()
