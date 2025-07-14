@@ -12,7 +12,7 @@ variables:
   swaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   apimName: 'dotnetapi9'
   apimResourceGroup: 'rg-23-6'
-  apimApiName: '<REPLACE-WITH-ACTUAL-API-ID>'  # <-- FIX THIS VALUE
+  apimApiName: 'dotnetapi9'
   subscriptionId: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
 
 pool:
@@ -20,6 +20,9 @@ pool:
 
 stages:
 
+# ---------------------------------- #
+#     STAGE 1: Build and Push Image  #
+# ---------------------------------- #
 - stage: BuildAndPush
   displayName: 'Build and Push Docker Image'
   jobs:
@@ -38,6 +41,9 @@ stages:
             docker push $(imageNameLatest)
           displayName: 'Build and Push Docker Image'
 
+# ---------------------------------- #
+#     STAGE 2: Process Swagger       #
+# ---------------------------------- #
 - stage: ImportToAPIM
   displayName: 'Process Swagger and Prepare for Sync'
   dependsOn: BuildAndPush
@@ -112,6 +118,9 @@ stages:
             artifact: 'swagger-json'
             publishLocation: 'pipeline'
 
+# ---------------------------------- #
+#     STAGE 3: Sync with APIM        #
+# ---------------------------------- #
 - stage: SyncToAPIM
   displayName: 'Validate + Sync Swagger to APIM'
   dependsOn: ImportToAPIM
@@ -132,7 +141,7 @@ stages:
             path: '$(Build.SourcesDirectory)'
 
         - task: AzureCLI@2
-          displayName: 'Validate + Cleanup + Sync + Publish'
+          displayName: 'Validate + Auto-Create + Cleanup + Sync + Publish'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
@@ -150,6 +159,23 @@ stages:
               export APIM_NAME='$(apimName)'
               export APIM_API_NAME='$(apimApiName)'
               export APIM_SWAGGER_URL='$(swaggerUrl)'
+
+              echo "🧪 Checking if API exists in APIM..."
+              if ! az apim api show --name "$APIM_API_NAME" \
+                                    --resource-group "$APIM_RESOURCE_GROUP" \
+                                    --service-name "$APIM_NAME" &>/dev/null; then
+                echo "➕ API not found. Creating new API in APIM..."
+                az apim api import \
+                  --resource-group "$APIM_RESOURCE_GROUP" \
+                  --service-name "$APIM_NAME" \
+                  --path "$APIM_API_NAME" \
+                  --api-id "$APIM_API_NAME" \
+                  --specification-format OpenApi \
+                  --value "$(cat swagger.json)" \
+                  --display-name "$APIM_API_NAME"
+              else
+                echo "✅ API already exists."
+              fi
 
               echo "🛡️ Validating APIM vs Swagger..."
               python3 validate_apim_vs_swagger.py || { echo '❌ Validation failed'; exit 1; }
