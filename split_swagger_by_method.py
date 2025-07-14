@@ -1,4 +1,4 @@
-# split_swagger_by_method.py
+
 import os
 import sys
 import json
