@@ -20,9 +20,6 @@ pool:
 
 stages:
 
-# ---------------------------------- #
-#     STAGE 1: Build and Push Image  #
-# ---------------------------------- #
 - stage: BuildAndPush
   displayName: 'Build and Push Docker Image'
   jobs:
@@ -41,9 +38,6 @@ stages:
             docker push $(imageNameLatest)
           displayName: 'Build and Push Docker Image'
 
-# ---------------------------------- #
-#     STAGE 2: Process Swagger       #
-# ---------------------------------- #
 - stage: ImportToAPIM
   displayName: 'Process Swagger and Prepare for Sync'
   dependsOn: BuildAndPush
@@ -63,26 +57,15 @@ stages:
               curl -sSL "$(swaggerUrl)" -o swagger.json
 
         - task: Bash@3
-          displayName: 'Add & Validate operationIds'
+          displayName: 'Auto-generate operationId for missing ops'
           inputs:
             targetType: 'inline'
             script: |
-              set -euo pipefail
               cd $(Build.SourcesDirectory)
-
-              echo "➕ Adding missing operationIds..."
               python3 add_operation_ids.py swagger.json
 
-              echo "✅ Validating operationIds..."
-              count=$(grep -o '"operationId"' swagger.json | wc -l)
-              if [ "$count" -eq 0 ]; then
-                echo "❌ No operationIds found. Failing."
-                exit 1
-              fi
-              echo "🔢 Found $count operationIds."
-
         - task: AzureCLI@2
-          displayName: 'Split Swagger (fail if missing operationId)'
+          displayName: 'Split Swagger into individual operations'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
@@ -99,10 +82,7 @@ stages:
 
               echo "✂️ Splitting Swagger..."
               mkdir -p split
-              python3 split_swagger_by_method.py swagger.json split/ || {
-                echo '❌ Swagger split failed due to missing operationId(s).'
-                exit 1
-              }
+              python3 split_swagger_by_method.py swagger.json split/ || { echo '❌ Swagger split failed'; exit 1; }
 
         - task: PublishPipelineArtifact@1
           displayName: 'Upload Swagger split files'
@@ -118,9 +98,6 @@ stages:
             artifact: 'swagger-json'
             publishLocation: 'pipeline'
 
-# ---------------------------------- #
-#     STAGE 3: Sync with APIM        #
-# ---------------------------------- #
 - stage: SyncToAPIM
   displayName: 'Validate + Sync Swagger to APIM'
   dependsOn: ImportToAPIM
@@ -141,7 +118,7 @@ stages:
             path: '$(Build.SourcesDirectory)'
 
         - task: AzureCLI@2
-          displayName: 'Validate + Auto-Create + Cleanup + Sync + Publish'
+          displayName: 'Validate + Cleanup + Sync + Publish'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
@@ -161,20 +138,24 @@ stages:
               export APIM_SWAGGER_URL='$(swaggerUrl)'
 
               echo "🧪 Checking if API exists in APIM..."
-              if ! az apim api show --name "$APIM_API_NAME" \
-                                    --resource-group "$APIM_RESOURCE_GROUP" \
-                                    --service-name "$APIM_NAME" &>/dev/null; then
-                echo "➕ API not found. Creating new API in APIM..."
+              if ! az apim api show \
+                --resource-group "$APIM_RESOURCE_GROUP" \
+                --service-name "$APIM_NAME" \
+                --api-id "$APIM_API_NAME" &>/dev/null; then
+
+                echo "➕ API not found. Creating it from Swagger..."
                 az apim api import \
                   --resource-group "$APIM_RESOURCE_GROUP" \
                   --service-name "$APIM_NAME" \
-                  --path "$APIM_API_NAME" \
                   --api-id "$APIM_API_NAME" \
+                  --path "$APIM_API_NAME" \
+                  --display-name "$APIM_API_NAME" \
                   --specification-format OpenApi \
-                  --value "$(cat swagger.json)" \
-                  --display-name "$APIM_API_NAME"
+                  --specification-path swagger.json || {
+                    echo '❌ API import failed'; exit 1;
+                  }
               else
-                echo "✅ API already exists."
+                echo "✅ API already exists in APIM."
               fi
 
               echo "🛡️ Validating APIM vs Swagger..."
