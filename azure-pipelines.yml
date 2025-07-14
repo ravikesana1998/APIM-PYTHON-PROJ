@@ -12,7 +12,7 @@ variables:
   swaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   apimName: 'dotnetapi9'
   apimResourceGroup: 'rg-23-6'
-  apimApiName: 'dotnetapi9'
+  apimApiName: '<REPLACE-WITH-ACTUAL-API-ID>'  # <-- FIX THIS VALUE
   subscriptionId: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
 
 pool:
@@ -20,9 +20,6 @@ pool:
 
 stages:
 
-# ---------------------------------- #
-#    STAGE 1: Build and Push Image   #
-# ---------------------------------- #
 - stage: BuildAndPush
   displayName: 'Build and Push Docker Image'
   jobs:
@@ -41,9 +38,6 @@ stages:
             docker push $(imageNameLatest)
           displayName: 'Build and Push Docker Image'
 
-# ---------------------------------- #
-#     STAGE 2: Prepare Swagger       #
-# ---------------------------------- #
 - stage: ImportToAPIM
   displayName: 'Process Swagger and Prepare for Sync'
   dependsOn: BuildAndPush
@@ -63,30 +57,26 @@ stages:
               curl -sSL "$(swaggerUrl)" -o swagger.json
 
         - task: Bash@3
-          displayName: 'Auto-generate operationId for missing ops and verify'
+          displayName: 'Add & Validate operationIds'
           inputs:
             targetType: 'inline'
             script: |
               set -euo pipefail
               cd $(Build.SourcesDirectory)
 
-              echo "🔍 Before adding operationIds:"
-              grep operationId swagger.json || echo "None found"
-
-              echo "➕ Running add_operation_ids.py..."
+              echo "➕ Adding missing operationIds..."
               python3 add_operation_ids.py swagger.json
 
-              echo "🔍 After adding operationIds:"
-              id_count=$(grep -o '"operationId"' swagger.json | wc -l)
-              echo "✅ Found $id_count operationIds"
-
-              if [ "$id_count" -eq 0 ]; then
-                echo "❌ No operationIds found in updated Swagger. Failing pipeline."
+              echo "✅ Validating operationIds..."
+              count=$(grep -o '"operationId"' swagger.json | wc -l)
+              if [ "$count" -eq 0 ]; then
+                echo "❌ No operationIds found. Failing."
                 exit 1
               fi
+              echo "🔢 Found $count operationIds."
 
         - task: AzureCLI@2
-          displayName: 'Split Swagger into individual operations (with fail on missing operationId)'
+          displayName: 'Split Swagger (fail if missing operationId)'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
@@ -122,9 +112,6 @@ stages:
             artifact: 'swagger-json'
             publishLocation: 'pipeline'
 
-# ---------------------------------- #
-#     STAGE 3: Sync with APIM        #
-# ---------------------------------- #
 - stage: SyncToAPIM
   displayName: 'Validate + Sync Swagger to APIM'
   dependsOn: ImportToAPIM
