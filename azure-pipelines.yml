@@ -7,11 +7,13 @@ pool:
   name: 'self-hosted-pool'
 
 variables:
+  # Swagger-related paths
   targetSwaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   SWAGGER_FILE: 'swagger.json'
   SPLIT_DIR: 'split'
   PYTHON_PATH: '/usr/bin/python3'
 
+  # Azure APIM configuration
   AZURE_SUBSCRIPTION_ID: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
   AZURE_RESOURCE_GROUP: 'rg-23-6'
   AZURE_APIM_NAME: 'dotnetapi9'
@@ -39,13 +41,19 @@ stages:
   jobs:
     - job: SyncToAPIM
       steps:
-        - task: UsePythonVersion@0
-          inputs:
-            versionSpec: '3.x'
+
+        - script: |
+            which $(PYTHON_PATH)
+            $(PYTHON_PATH) --version
+          displayName: 🐍 Check Python Version
 
         - script: |
             $(PYTHON_PATH) -m pip install --upgrade pip
-            $(PYTHON_PATH) -m pip install -r requirements.txt
+            if [ -f requirements.txt ]; then
+              $(PYTHON_PATH) -m pip install -r requirements.txt
+            else
+              echo "⚠️ No requirements.txt found. Skipping dependency install."
+            fi
           displayName: 📦 Install Python Dependencies
 
         - script: |
