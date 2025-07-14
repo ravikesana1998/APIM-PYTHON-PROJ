@@ -63,19 +63,30 @@ stages:
               curl -sSL "$(swaggerUrl)" -o swagger.json
 
         - task: Bash@3
-          displayName: 'Auto-generate operationId for missing ops'
+          displayName: 'Auto-generate operationId for missing ops and verify'
           inputs:
             targetType: 'inline'
             script: |
+              set -euo pipefail
               cd $(Build.SourcesDirectory)
-              echo "🔍 Before update:"
-              grep operationId swagger.json || echo "No operationId present"
+
+              echo "🔍 Before adding operationIds:"
+              grep operationId swagger.json || echo "None found"
+
+              echo "➕ Running add_operation_ids.py..."
               python3 add_operation_ids.py swagger.json
-              echo "🔍 After update:"
-              grep operationId swagger.json || echo "No operationId present"
+
+              echo "🔍 After adding operationIds:"
+              id_count=$(grep -o '"operationId"' swagger.json | wc -l)
+              echo "✅ Found $id_count operationIds"
+
+              if [ "$id_count" -eq 0 ]; then
+                echo "❌ No operationIds found in updated Swagger. Failing pipeline."
+                exit 1
+              fi
 
         - task: AzureCLI@2
-          displayName: 'Split Swagger into individual operations'
+          displayName: 'Split Swagger into individual operations (with fail on missing operationId)'
           inputs:
             azureSubscription: 'DevopsServiceConnection'
             scriptType: 'bash'
@@ -92,7 +103,10 @@ stages:
 
               echo "✂️ Splitting Swagger..."
               mkdir -p split
-              python3 split_swagger_by_method.py swagger.json split/ || { echo '❌ Swagger split failed'; exit 1; }
+              python3 split_swagger_by_method.py swagger.json split/ || {
+                echo '❌ Swagger split failed due to missing operationId(s).'
+                exit 1
+              }
 
         - task: PublishPipelineArtifact@1
           displayName: 'Upload Swagger split files'
