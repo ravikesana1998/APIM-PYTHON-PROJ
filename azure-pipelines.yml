@@ -8,8 +8,8 @@ pool:
 
 variables:
   targetSwaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
-  SWAGGER_FILE: 'swagger.json'
-  SPLIT_DIR: 'split'
+  SWAGGER_FILE: 'swagger/processed_swagger.json'
+  SPLIT_DIR: 'swagger/split'
   PYTHON_PATH: '/usr/bin/python3'
 
   AZURE_SUBSCRIPTION_ID: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
@@ -20,115 +20,99 @@ variables:
 stages:
 
 # ---------------------------------- #
-# Stage 1: Download Swagger
+# Stage 1: Fetch & Preprocess Swagger
 # ---------------------------------- #
-- stage: BuildAndDownloadSwagger
-  displayName: ✨ Build & Export Swagger
+- stage: FetchAndPreprocessSwagger
+  displayName: 📥 Fetch & Preprocess Swagger
   jobs:
-    - job: ExportSwagger
+    - job: FetchSwagger
       steps:
         - script: |
-            curl -sSL "$targetSwaggerUrl" -o "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
-            displayName: 📁 Download Swagger JSON
-        - script: |
-            echo "✅ Downloaded swagger.json:"
-            head -n 20 "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
-          displayName: 🔍 Preview Swagger Top
+            mkdir -p swagger
+            echo "Downloading Swagger from $targetSwaggerUrl"
+            $PYTHON_PATH scripts/fetch_and_preprocess_swagger.py
+          env:
+            SWAGGER_URL: $(targetSwaggerUrl)
+          displayName: 📁 Download & Preprocess Swagger
 
 # ---------------------------------- #
-# Stage 2: Split & Sync to APIM
+# Stage 2: Split Swagger & Prepare
 # ---------------------------------- #
-- stage: SplitAndSyncToAPIM
-  displayName: 🌀 Split + Sync to Azure API Management
-  dependsOn: BuildAndDownloadSwagger
+- stage: SplitSwagger
+  displayName: ✂️ Split Swagger Per Operation
+  dependsOn: FetchAndPreprocessSwagger
   jobs:
-    - job: SyncToAPIM
+    - job: Split
       steps:
         - script: |
-            rm -rf "$BUILD_SOURCESDIRECTORY/$SPLIT_DIR"
-            mkdir -p "$BUILD_SOURCESDIRECTORY/$SPLIT_DIR"
-            displayName: 📂 Clean Split Folder
+            rm -rf "$(SPLIT_DIR)"
+            mkdir -p "$(SPLIT_DIR)"
+            $PYTHON_PATH scripts/split_swagger_by_operation.py
+          displayName: ✂️ Split Swagger JSON
 
+# ---------------------------------- #
+# Stage 3: APIM Validation & Sync
+# ---------------------------------- #
+- stage: SyncToAPIM
+  displayName: 🚀 Sync with Azure API Management
+  dependsOn: SplitSwagger
+  jobs:
+    - job: Sync
+      steps:
+        # Optional API import fallback
         - script: |
-            echo "📂 List all files in sources directory:"
-            find "$BUILD_SOURCESDIRECTORY" -type f
-            displayName: 🧪 Debug: List All Files
-        - script: |
-            echo "➕ Adding missing operationIds..."
-            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/add_operation_ids.py" "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
-
-            echo "🔍 Validating operationIds..."
-            id_count=$(grep -o '"operationId"' "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE" | wc -l)
-            if [ "$id_count" -eq 0 ]; then
-              echo "❌ No operationIds found. Failing pipeline."
-              exit 1
-            fi
-            echo "✅ Found $id_count operationIds"
-          displayName: 🧠 Auto-generate Operation IDs
-
-        - script: |
-            echo "🔍 Verifying swagger.json location:"
-            ls -l "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
-
-            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/split_swagger_by_method.py" \
-              "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE" \
-              "$BUILD_SOURCESDIRECTORY/$SPLIT_DIR"
-          displayName: ✂️ Split Swagger into Per-Operation Files
-
-        - script: |
-            echo "🧪 Checking if API exists in APIM..."
+            echo "Checking if API exists in APIM..."
             if ! az apim api show \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --service-name "$AZURE_APIM_NAME" \
-              --api-id "$AZURE_APIM_API_ID" &>/dev/null; then
+              --resource-group "$(AZURE_RESOURCE_GROUP)" \
+              --service-name "$(AZURE_APIM_NAME)" \
+              --api-id "$(AZURE_APIM_API_ID)" &>/dev/null; then
 
-              echo "➕ API not found. Creating it from Swagger..."
+              echo "Creating API in APIM from Swagger..."
               az apim api import \
-                --resource-group "$AZURE_RESOURCE_GROUP" \
-                --service-name "$AZURE_APIM_NAME" \
-                --api-id "$AZURE_APIM_API_ID" \
-                --path "$AZURE_APIM_API_ID" \
-                --display-name "$AZURE_APIM_API_ID" \
+                --resource-group "$(AZURE_RESOURCE_GROUP)" \
+                --service-name "$(AZURE_APIM_NAME)" \
+                --api-id "$(AZURE_APIM_API_ID)" \
+                --path "$(AZURE_APIM_API_ID)" \
+                --display-name "$(AZURE_APIM_API_ID)" \
                 --specification-format OpenApi \
-                --specification-path "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE" || {
-                  echo '❌ API import failed'; exit 1;
+                --specification-path "$(SWAGGER_FILE)" || {
+                  echo "❌ API import failed"; exit 1;
                 }
             else
-              echo "✅ API already exists in APIM."
+              echo "✅ API already exists."
             fi
-          displayName: 🧪 Auto-Create API If Missing
+          displayName: 🧪 Ensure API Exists in APIM
 
+        # Validate APIM vs Swagger
         - script: |
-            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/validate_apim_vs_swagger.py"
+            $PYTHON_PATH scripts/validate_apim_vs_swagger.py
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
-            AZURE_APIM_NAME: $(AZURE_APIM_NAME)
-            AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
-          displayName: 🔒 Validate APIM vs Swagger
+            APIM_SERVICE_NAME: $(AZURE_APIM_NAME)
+            API_ID: $(AZURE_APIM_API_ID)
+          displayName: 🔍 Validate APIM vs Swagger
 
+        # Optionally: clean up stale ops
         - script: |
-            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/cleanup_removed_operations.py"
+            echo "🔧 Skipping cleanup for now (or implement cleanup_removed_operations.py)"
+          displayName: 🧹 [Optional] Clean Removed Operations
+
+        # Sync updated operations
+        - script: |
+            $PYTHON_PATH scripts/sync_operations_to_apim.py
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
-            AZURE_APIM_NAME: $(AZURE_APIM_NAME)
-            AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
-          displayName: 🧹 Clean Removed Operations
+            APIM_SERVICE_NAME: $(AZURE_APIM_NAME)
+            API_ID: $(AZURE_APIM_API_ID)
+          displayName: 🚀 Sync Updated/New Operations to APIM
 
-        - script: |
-            "$PYTHON_PATH" "$BUILD_SOURCESDIRECTORY/sync_apim_operations.py"
-          env:
-            AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
-            AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
-            AZURE_APIM_NAME: $(AZURE_APIM_NAME)
-            AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
-          displayName: 🚀 Sync Updated Operations to APIM
-
+        # Publish latest revision
         - script: |
             az apim api update \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --service-name "$AZURE_APIM_NAME" \
-              --api-id "$AZURE_APIM_API_ID" \
+              --resource-group "$(AZURE_RESOURCE_GROUP)" \
+              --service-name "$(AZURE_APIM_NAME)" \
+              --api-id "$(AZURE_APIM_API_ID)" \
               --set isCurrent=true
-          displayName: 📢 Publish Latest Revision
+          displayName: 📢 Publish Latest API Revision
