@@ -1,129 +1,15 @@
-# import os
-# import json
-# from azure.identity import DefaultAzureCredential
-# from azure.mgmt.apimanagement import ApiManagementClient
-# from azure.mgmt.apimanagement.models import OperationContract, RequestContract, ParameterContract, ResponseContract
-# from azure.core.exceptions import ResourceNotFoundError
-
-# subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
-# resource_group = os.environ["AZURE_RESOURCE_GROUP"]
-# apim_name = os.environ["AZURE_APIM_NAME"]
-# api_id = os.environ["AZURE_APIM_API_ID"]
-# split_dir = os.environ.get("SPLIT_DIR", "./split")
-
-# def extract_method_and_path(filename):
-#     parts = filename.split("_", 1)
-#     if len(parts) != 2:
-#         return None, None
-#     method = parts[0].lower()
-#     try:
-#         with open(filename, "r") as f:
-#             swagger = json.load(f)
-#             path = list(swagger["paths"].keys())[0]
-#             return method, path
-#     except:
-#         return method, None
-
-# def sync_operation(filepath):
-#     try:
-#         with open(filepath, "r") as f:
-#             swagger = json.load(f)
-#     except Exception as e:
-#         print(f"⚠️ Failed to load {filepath}: {e}")
-#         return False
-
-#     try:
-#         operation_id = swagger.get("operationId")
-#         if not operation_id:
-#             print(f"⚠️ Skipping file missing metadata: {filepath}")
-#             return False
-
-#         method, path = extract_method_and_path(filepath)
-#         if not path:
-#             print(f"⚠️ Could not extract path from {filepath}")
-#             return False
-
-#         print(f"\n🔄 Syncing {method.upper()} {path} ({operation_id})")
-
-#         credential = DefaultAzureCredential()
-#         client = ApiManagementClient(credential, subscription_id)
-
-#         parameters = []
-#         for param in swagger.get("parameters", []):
-#             parameters.append(ParameterContract(
-#                 name=param["name"],
-#                 required=param.get("required", False),
-#                 type=param.get("schema", {}).get("type", "string"),
-#                 description=param.get("description", ""),
-#                 location=param.get("in")
-#             ))
-
-#         request = None
-#         if "requestBody" in swagger:
-#             content = swagger["requestBody"]["content"]
-#             if "application/json" in content:
-#                 schema = content["application/json"].get("schema", {})
-#                 request = RequestContract(
-#                     query_parameters=[p for p in parameters if p.location == "query"],
-#                     headers=[],
-#                     representations=[{
-#                         "content_type": "application/json",
-#                         "sample": json.dumps(schema)
-#                     }]
-#                 )
-
-#         responses = []
-#         for status_code, resp in swagger.get("responses", {}).items():
-#             responses.append(ResponseContract(
-#                 status_code=int(status_code) if status_code.isdigit() else 200,
-#                 description=resp.get("description", "")
-#             ))
-
-#         contract = OperationContract(
-#             display_name=operation_id,
-#             method=method.upper(),
-#             url_template=path,
-#             request=request,
-#             responses=responses,
-#             template_parameters=[p for p in parameters if p.location == "path"]
-#         )
-
-#         client.api_operation.create_or_update(
-#             resource_group_name=resource_group,
-#             service_name=apim_name,
-#             api_id=api_id,
-#             operation_id=operation_id,
-#             parameters=contract
-#         )
-
-#         print(f"✅ Synced operation: {operation_id}")
-#         return True
-
-#     except ResourceNotFoundError as e:
-#         print(f"❌ Failed to sync {filepath}: {e.message}")
-#         return False
-
-# def main():
-#     success_count = 0
-#     total = 0
-#     for root, _, files in os.walk(split_dir):
-#         for file in files:
-#             if file.endswith(".json"):
-#                 total += 1
-#                 full_path = os.path.join(root, file)
-#                 if sync_operation(full_path):
-#                     success_count += 1
-#     print(f"\n✅ Sync Summary: {success_count}/{total} operations synced.")
-
-# if __name__ == "__main__":
-#     main()
-
 import os
 import json
 import re
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
-from azure.mgmt.apimanagement.models import OperationContract, RequestContract, ResponseContract, ParameterContract, RepresentationContract
+from azure.mgmt.apimanagement.models import (
+    OperationContract,
+    RequestContract,
+    ResponseContract,
+    ParameterContract,
+    RepresentationContract,
+)
 
 # Read environment variables
 subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
@@ -194,28 +80,37 @@ def sync_operations():
     client = ApiManagementClient(credential, subscription_id)
 
     synced_count = 0
+    total_count = 0
 
     for root, _, files in os.walk(split_dir):
         for file in files:
             if file.endswith(".json"):
+                total_count += 1
                 filepath = os.path.join(root, file)
-                print(f"📂 Reading: {filepath}")
+                print(f"\n📂 Reading file: {filepath}")
+
                 swagger = parse_swagger_file(filepath)
 
                 op_id = swagger.get("operationId")
                 if not op_id:
-                    print(f"⚠️ Skipping file missing operationId: {filepath}")
+                    print(f"⚠️ Skipping file (no operationId): {filepath}")
                     continue
 
                 method, path = extract_method_and_path(file)
+                print(f"🔎 Extracted method: {method}, path: {path}, operationId: {op_id}")
+
                 if not method or not path:
-                    print(f"⚠️ Could not parse method/path from filename: {file}")
+                    print(f"❌ Could not determine method/path from filename: {file}")
                     continue
 
                 print(f"🔄 Syncing {method.upper()} {path} ({op_id})")
 
                 try:
                     op_contract = build_operation_contract(op_id, method, path, swagger)
+
+                    print("📤 Built operation contract:")
+                    print(json.dumps(op_contract.as_dict(), indent=2))
+
                     client.api_operation.create_or_update(
                         resource_group_name=resource_group,
                         service_name=apim_name,
@@ -224,11 +119,14 @@ def sync_operations():
                         parameters=op_contract,
                         if_match="*"
                     )
+                    print(f"✅ Synced operation: {op_id}")
                     synced_count += 1
+
                 except Exception as e:
                     print(f"❌ Failed to sync {filepath}: {str(e)}")
+                    raise  # 🔥 Important for fail-fast
 
-    print(f"✅ Sync Summary: {synced_count} operations synced.")
+    print(f"\n✅ Sync Summary: {synced_count}/{total_count} operations synced.")
 
 if __name__ == "__main__":
     sync_operations()
