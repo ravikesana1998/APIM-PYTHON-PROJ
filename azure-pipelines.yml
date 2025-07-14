@@ -128,30 +128,32 @@ stages:
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
+              set -euo pipefail
               cd $(Build.SourcesDirectory)
-              echo "📦 Exporting env vars..."
-              export AZURE_SUBSCRIPTION_ID=$(subscriptionId)
-              export AZURE_RESOURCE_GROUP=$(apimResourceGroup)
-              export AZURE_APIM_NAME=$(apimName)
-              export AZURE_APIM_API_ID=$(apimApiName)
 
-              export APIM_RESOURCE_GROUP=$(apimResourceGroup)
-              export APIM_NAME=$(apimName)
-              export APIM_API_NAME=$(apimApiName)
-              export APIM_SWAGGER_URL=$(swaggerUrl)
+              echo "📦 Exporting environment variables..."
+              export AZURE_SUBSCRIPTION_ID='$(subscriptionId)'
+              export AZURE_RESOURCE_GROUP='$(apimResourceGroup)'
+              export AZURE_APIM_NAME='$(apimName)'
+              export AZURE_APIM_API_ID='$(apimApiName)'
+
+              export APIM_RESOURCE_GROUP='$(apimResourceGroup)'
+              export APIM_NAME='$(apimName)'
+              export APIM_API_NAME='$(apimApiName)'
+              export APIM_SWAGGER_URL='$(swaggerUrl)'
 
               echo "🛡️ Validating APIM vs Swagger..."
-              python3 validate_apim_vs_swagger.py
+              python3 validate_apim_vs_swagger.py || { echo '❌ Validation failed'; exit 1; }
 
               echo "🧹 Cleaning removed operations..."
-              python3 cleanup_removed_operations.py
+              python3 cleanup_removed_operations.py || { echo '❌ Cleanup failed'; exit 1; }
 
               echo "🚀 Syncing new/updated operations to APIM..."
-              python3 sync_apim_operations.py
+              python3 sync_apim_operations.py || { echo '❌ Sync failed'; exit 1; }
 
               echo "📢 Publishing latest API revision..."
               az apim api update \
-                --resource-group $(apimResourceGroup) \
-                --service-name $(apimName) \
-                --api-id $(apimApiName) \
-                --set isCurrent=true
+                --resource-group "$APIM_RESOURCE_GROUP" \
+                --service-name "$APIM_NAME" \
+                --api-id "$APIM_API_NAME" \
+                --set isCurrent=true || { echo '❌ Publish failed'; exit 1; }
