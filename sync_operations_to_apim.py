@@ -1,47 +1,30 @@
-# scripts/sync_operations_to_apim.py
+#!/usr/bin/env python3
+import os, sys, subprocess
 
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.apimanagement import ApiManagementClient
-import os, json
-from pathlib import Path
-
-SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
-RESOURCE_GROUP = os.getenv("AZURE_RESOURCE_GROUP")
-SERVICE_NAME = os.getenv("APIM_SERVICE_NAME")
-API_ID = os.getenv("API_ID")
-
-def sync_operation(file_path):
-    op_spec = json.load(open(file_path))
-    path = next(iter(op_spec["paths"]))
-    method = next(iter(op_spec["paths"][path]))
-    operation = op_spec["paths"][path][method]
-    operation_id = operation["operationId"]
-
-    print(f"Syncing {operation_id}...")
-
-    client = ApiManagementClient(DefaultAzureCredential(), SUBSCRIPTION_ID)
-    client.api_operation.create_or_update(
-        resource_group_name=RESOURCE_GROUP,
-        service_name=SERVICE_NAME,
-        api_id=API_ID,
-        operation_id=operation_id,
-        parameters={
-            "display_name": operation.get("summary", operation_id),
-            "method": method.upper(),
-            "url_template": path,
-            "request": {},
-            "responses": {
-                "200": {
-                    "description": "Success"
-                }
-            }
-        }
-    )
+def run(cmd):
+    print(">", cmd)
+    r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(r.stderr)
+    return r
 
 def main():
-    split_dir = Path("swagger/split")
-    for file_path in split_dir.glob("*.json"):
-        sync_operation(file_path)
+    swagger = sys.argv[1]
+    split_dir = sys.argv[2]
+    rg = os.getenv("AZURE_RESOURCE_GROUP")
+    svc = os.getenv("AZURE_APIM_NAME")
+    api = os.getenv("AZURE_APIM_API_ID")
 
-if __name__ == "__main__":
+    for fname in os.listdir(split_dir):
+        if not fname.endswith('.json'): continue
+        full = os.path.join(split_dir, fname)
+        spec = swagger_path = full
+        print(f"Syncing {fname}")
+        run(
+            f"az apim api operation import --resource-group {rg} "
+            f"--service-name {svc} --api-id {api} --path {fname[:-5]} "
+            f"--specification-format OpenApi --specification-path {spec}"
+        )
+
+if __name__ == '__main__':
     main()
