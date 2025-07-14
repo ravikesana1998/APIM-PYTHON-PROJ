@@ -77,13 +77,17 @@ stages:
             scriptType: 'bash'
             scriptLocation: 'inlineScript'
             inlineScript: |
+              set -euo pipefail
               cd $(Build.SourcesDirectory)
-              export AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-              export AZURE_RESOURCE_GROUP=$(apimResourceGroup)
-              export AZURE_APIM_NAME=$(apimName)
-              export AZURE_APIM_API_ID=$(apimApiName)
+              echo "📦 Preparing to split Swagger..."
+
+              export AZURE_SUBSCRIPTION_ID='$(subscriptionId)'
+              export AZURE_RESOURCE_GROUP='$(apimResourceGroup)'
+              export AZURE_APIM_NAME='$(apimName)'
+              export AZURE_APIM_API_ID='$(apimApiName)'
+
               mkdir -p split
-              python3 split_swagger_by_method.py swagger.json
+              python3 split_swagger_by_method.py swagger.json split/
 
         - task: PublishPipelineArtifact@1
           displayName: 'Upload Swagger split files'
@@ -136,7 +140,6 @@ stages:
               export AZURE_RESOURCE_GROUP='$(apimResourceGroup)'
               export AZURE_APIM_NAME='$(apimName)'
               export AZURE_APIM_API_ID='$(apimApiName)'
-
               export APIM_RESOURCE_GROUP='$(apimResourceGroup)'
               export APIM_NAME='$(apimName)'
               export APIM_API_NAME='$(apimApiName)'
