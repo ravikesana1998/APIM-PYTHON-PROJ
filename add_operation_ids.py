@@ -1,51 +1,39 @@
 import json
-import re
 import sys
-
-def sanitize_segment(segment):
-    return re.sub(r"[{}]", "", segment)
+import hashlib
 
 def generate_operation_id(method, path):
-    segments = path.strip("/").split("/")
-    clean_segments = [sanitize_segment(s) for s in segments]
-    return method.capitalize() + "".join([s.capitalize() for s in clean_segments])
+    # Create a safe and unique operationId using method + path hash
+    clean_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
+    base = f"{method.lower()}_{clean_path}"
+    hash_suffix = hashlib.md5(path.encode()).hexdigest()[:6]
+    return f"{base}_{hash_suffix}"
 
-def add_operation_ids(swagger_path):
-    with open(swagger_path, "r") as f:
+def add_operation_ids(swagger_file):
+    with open(swagger_file, "r") as f:
         swagger = json.load(f)
 
-    modified = False
-    existing_ids = set()
-
+    updated = False
     for path, methods in swagger.get("paths", {}).items():
         for method, operation in methods.items():
-            if "operationId" not in operation or not operation["operationId"].strip():
-                op_id = generate_operation_id(method, path)
-
-                # Ensure uniqueness by appending a counter if needed
-                base_op_id = op_id
-                counter = 1
-                while op_id in existing_ids:
-                    op_id = f"{base_op_id}{counter}"
-                    counter += 1
-
-                operation["operationId"] = op_id
-                existing_ids.add(op_id)
-
-                print(f"➕ Added operationId: {op_id} for {method.upper()} {path}")
-                modified = True
+            if "operationId" not in operation:
+                generated_id = generate_operation_id(method, path)
+                operation["operationId"] = generated_id
+                print(f"🆕 Added operationId for {method.upper()} {path}: {generated_id}")
+                updated = True
             else:
-                existing_ids.add(operation["operationId"])
+                print(f"✅ Found operationId for {method.upper()} {path}: {operation['operationId']}")
 
-    if modified:
-        with open(swagger_path, "w") as f:
+    if updated:
+        with open(swagger_file, "w") as f:
             json.dump(swagger, f, indent=2)
-        print("✅ Swagger updated with missing operationId fields.")
+        print("💾 Updated Swagger file with missing operationIds.")
     else:
-        print("✅ All operations already have operationId fields. No changes made.")
+        print("👍 All operations already have operationIds. No changes made.")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python add_operation_ids.py <swagger-file>")
         sys.exit(1)
+
     add_operation_ids(sys.argv[1])
