@@ -1,156 +1,128 @@
 import os
 import json
+import glob
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
 from azure.mgmt.apimanagement.models import (
     OperationContract,
-    ParameterContract,
     RequestContract,
+    ParameterContract,
     ResponseContract,
-    RepresentationContract,
-    ApiCreateOrUpdateParameter
+    RepresentationContract
 )
-from azure.core.exceptions import HttpResponseError
 
-def build_operation_contract(op_data):
-    method = op_data["method"].upper()
-    url_template = op_data["path"]
-    display_name = op_data["operationId"]
-    parameters = op_data.get("parameters", [])
-    request_body = op_data.get("requestBody", {})
-    responses = op_data.get("responses", {})
+# Read environment variables
+SUBSCRIPTION_ID = os.environ["AZURE_SUBSCRIPTION_ID"]
+RESOURCE_GROUP = os.environ["AZURE_RESOURCE_GROUP"]
+APIM_NAME = os.environ["AZURE_APIM_NAME"]
+API_ID = os.environ["AZURE_APIM_API_ID"]
 
-    query_parameters = []
-    template_parameters = []
+# Authenticate with Azure
+credential = DefaultAzureCredential()
+client = ApiManagementClient(credential, SUBSCRIPTION_ID)
 
-    for param in parameters:
-        param_contract = ParameterContract(
-            name=param["name"],
-            required=param.get("required", False),
-            type=param.get("schema", {}).get("type", "string"),
-            default_value=param.get("schema", {}).get("default"),
-            description=param.get("description", ""),
-        )
-        if param["in"] == "query":
-            query_parameters.append(param_contract)
-        elif param["in"] == "path":
-            template_parameters.append(param_contract)
+def extract_path_params(url_template):
+    import re
+    return re.findall(r"{(.*?)}", url_template)
 
-    request_representation = None
-    if request_body:
-        content = request_body.get("content", {})
-        json_content = content.get("application/json")
-        if json_content:
-            schema = json_content.get("schema")
-            request_representation = RepresentationContract(
-                content_type="application/json",
-                schema=schema
+def load_swagger_file(filepath):
+    with open(filepath, "r") as f:
+        return json.load(f)
+
+def create_or_update_operation(swagger: dict, method: str, url_template: str, operation_id: str):
+    parameters = swagger.get("parameters", [])
+    request_body = swagger.get("requestBody", {})
+    responses = swagger.get("responses", {})
+
+    query_params = []
+    path_params = []
+    if parameters:
+        for param in parameters:
+            param_contract = ParameterContract(
+                name=param.get("name"),
+                required=param.get("required", False),
+                type="string",  # Simplified; optionally parse from param['schema']['type']
+                description=param.get("description", ""),
+                default_value=param.get("schema", {}).get("default", ""),
+                values=param.get("schema", {}).get("enum", []),
             )
+            if param.get("in") == "query":
+                query_params.append(param_contract)
+            elif param.get("in") == "path":
+                path_params.append(param_contract)
 
-    request_contract = RequestContract(
-        query_parameters=query_parameters,
-        template_parameters=template_parameters,
-        representations=[request_representation] if request_representation else []
+    representations = []
+    if request_body and "content" in request_body:
+        for mime_type, media in request_body["content"].items():
+            schema = media.get("schema", {})
+            representations.append(RepresentationContract(content_type=mime_type, schema=schema))
+
+    request = RequestContract(
+        query_parameters=query_params,
+        headers=[],
+        representations=representations
     )
 
-    response_contracts = []
-    for status_code, resp in responses.items():
-        content = resp.get("content", {})
-        json_content = content.get("application/json")
-        representation = None
-        if json_content:
-            schema = json_content.get("schema")
-            representation = RepresentationContract(
-                content_type="application/json",
-                schema=schema
-            )
-        response_contracts.append(ResponseContract(
-            status_code=status_code,
-            representations=[representation] if representation else []
+    response_list = []
+    for status_code, response in responses.items():
+        representations = []
+        if "content" in response:
+            for mime_type, media in response["content"].items():
+                schema = media.get("schema", {})
+                representations.append(RepresentationContract(content_type=mime_type, schema=schema))
+        response_list.append(ResponseContract(
+            status_code=int(status_code) if status_code.isdigit() else 200,
+            description=response.get("description", ""),
+            representations=representations
         ))
 
-    operation = OperationContract(
-        display_name=display_name,
-        method=method,
+    op_contract = OperationContract(
+        display_name=operation_id,
+        method=method.upper(),
         url_template=url_template,
-        request=request_contract,
-        responses=response_contracts
+        request=request,
+        responses=response_list,
+        template_parameters=path_params
     )
-    return operation
 
-def create_or_update_operation(client, resource_group, service_name, api_id, operation_id, operation_contract):
+    print(f"🛠️ OperationContract built:\n"
+          f"  - Display Name: {operation_id}\n"
+          f"  - Method: {method.upper()}\n"
+          f"  - URL Template: {url_template}\n"
+          f"  - Query Params: {[p.name for p in query_params]}\n"
+          f"  - Path Params: {[p.name for p in path_params]}\n"
+          f"  - Representations: {len(representations)}\n"
+          f"  - Responses: {len(response_list)}")
+
     try:
-        print(f"[🔄] Syncing {operation_contract.method} {operation_contract.url_template} ({operation_id})")
         client.api_operation.create_or_update(
-            resource_group_name=resource_group,
-            service_name=service_name,
-            api_id=api_id,
+            resource_group_name=RESOURCE_GROUP,
+            service_name=APIM_NAME,
+            api_id=API_ID,
             operation_id=operation_id,
-            parameters=operation_contract
+            parameters=op_contract
         )
         print(f"✅ Operation synced to APIM: {operation_id}")
-    except HttpResponseError as e:
-        print(f"❌ Failed to sync operation {operation_id}: {e.message}")
-
-def ensure_api_exists(client, resource_group, service_name, api_id):
-    try:
-        client.api.get(resource_group, service_name, api_id)
-        print(f"✅ API '{api_id}' already exists.")
-    except HttpResponseError as e:
-        if "not found" in str(e).lower():
-            print(f"⚠️ API '{api_id}' not found. Creating it...")
-            client.api.create_or_update(
-                resource_group,
-                service_name,
-                api_id,
-                parameters=ApiCreateOrUpdateParameter(
-                    display_name=api_id,
-                    path=api_id,
-                    protocols=["https"]
-                )
-            )
-            print(f"✅ Created API '{api_id}'.")
-        else:
-            raise
+    except Exception as e:
+        print(f"❌ Failed to sync {operation_id}: {e}")
 
 def main():
-    subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
-    resource_group = os.environ["APIM_RESOURCE_GROUP"]
-    service_name = os.environ["APIM_SERVICE_NAME"]
-    api_id = os.environ["APIM_API_ID"]
-    split_dir = "./split"
+    swagger_files = glob.glob("split/**/*.json", recursive=True)
+    print(f"🚀 Syncing {len(swagger_files)} Swagger operations to APIM...")
 
-    credential = DefaultAzureCredential()
-    client = ApiManagementClient(credential, subscription_id)
+    for file in swagger_files:
+        print(f"📂 Reading: {file}")
+        swagger = load_swagger_file(file)
+        operation_id = swagger.get("operationId")
+        method = swagger.get("x-method")
+        url_template = swagger.get("x-path")
 
-    ensure_api_exists(client, resource_group, service_name, api_id)
+        if not all([operation_id, method, url_template]):
+            print(f"⚠️ Skipping file missing metadata: {file}")
+            continue
 
-    from glob import glob
-    import re
-
-    swagger_files = glob(f"{split_dir}/**/*.json", recursive=True)
-    print(f"Syncing {len(swagger_files)} Swagger operations to APIM...")
-    for file_path in swagger_files:
-        try:
-            with open(file_path, "r") as f:
-                swagger = json.load(f)
-
-            method = swagger["method"]
-            path = swagger["path"]
-            operation_id = swagger["operationId"]
-            op_data = {
-                "method": method,
-                "path": path,
-                "operationId": operation_id,
-                "parameters": swagger.get("parameters", []),
-                "requestBody": swagger.get("requestBody", {}),
-                "responses": swagger.get("responses", {})
-            }
-            operation_contract = build_operation_contract(op_data)
-            create_or_update_operation(
-                client, resource_group, service_name, api_id, operation_id, operation_contract
-            )
-        except Exception as e:
-            print(f"❌ Failed to sync {file_path}: {e}")
+        print(f"✅ Parsed operationId={operation_id}, method={method}, path={url_template}")
+        create_or_update_operation(swagger, method, url_template, operation_id)
 
 if __name__ == "__main__":
+    main()
