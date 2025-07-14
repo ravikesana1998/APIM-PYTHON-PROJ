@@ -51,14 +51,30 @@ stages:
           displayName: 📂 Clean Split Folder
 
         - script: |
-            echo "📂 Listing contents before split:"
-            ls -l "$(Build.SourcesDirectory)"
-          displayName: 🧪 Verify Swagger File Exists
+            echo "📂 List all files in sources directory:"
+            find "$(Build.SourcesDirectory)" -type f
+          displayName: 🧪 Debug: List All Files
 
         - script: |
+            echo "➕ Adding missing operationIds..."
+            $(PYTHON_PATH) "$(Build.SourcesDirectory)/add_operation_ids.py" "$(Build.SourcesDirectory)/swagger.json"
+
+            echo "🔍 Validating operationIds..."
+            id_count=$(grep -o '"operationId"' "$(Build.SourcesDirectory)/swagger.json" | wc -l)
+            if [ "$id_count" -eq 0 ]; then
+              echo "❌ No operationIds found in updated Swagger. Failing pipeline."
+              exit 1
+            fi
+            echo "✅ Found $id_count operationIds"
+          displayName: 🧠 Auto-generate Operation IDs
+
+        - script: |
+            echo "🔍 Verifying swagger.json location:"
+            ls -l "$(Build.SourcesDirectory)/swagger.json"
+
             $(PYTHON_PATH) "$(Build.SourcesDirectory)/split_swagger_by_method.py" \
-              "$(Build.SourcesDirectory)/$(SWAGGER_FILE)" \
-              "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
+              "$(Build.SourcesDirectory)/swagger.json" \
+              "$(Build.SourcesDirectory)/split"
           displayName: ✂️ Split Swagger into Per-Operation Files
 
         - script: |
@@ -76,7 +92,7 @@ stages:
                 --path "$(AZURE_APIM_API_ID)" \
                 --display-name "$(AZURE_APIM_API_ID)" \
                 --specification-format OpenApi \
-                --specification-path "$(Build.SourcesDirectory)/$(SWAGGER_FILE)" || {
+                --specification-path "$(Build.SourcesDirectory)/swagger.json" || {
                   echo '❌ API import failed'; exit 1;
                 }
             else
