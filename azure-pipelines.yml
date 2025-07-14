@@ -19,6 +19,9 @@ variables:
 
 stages:
 
+# ---------------------------------- #
+# Stage 1: Download Swagger
+# ---------------------------------- #
 - stage: BuildAndDownloadSwagger
   displayName: ✨ Build & Export Swagger
   jobs:
@@ -33,36 +36,31 @@ stages:
             head -n 20 "$(Build.SourcesDirectory)/$(SWAGGER_FILE)"
           displayName: 🔍 Preview Swagger Top
 
-# -----------------------------
-# Stage: Split + Sync to APIM
-# -----------------------------
+# ---------------------------------- #
+# Stage 2: Split & Sync to APIM
+# ---------------------------------- #
 - stage: SplitAndSyncToAPIM
   displayName: 🌀 Split + Sync to Azure API Management
   dependsOn: BuildAndDownloadSwagger
   jobs:
     - job: SyncToAPIM
       steps:
-
-        # Clean and recreate the split folder
         - script: |
             rm -rf "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
             mkdir -p "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
           displayName: 📂 Clean Split Folder
 
-        # Optional: List files for debugging
         - script: |
-            echo "🔍 Listing contents of $(Build.SourcesDirectory):"
-            ls -la "$(Build.SourcesDirectory)"
-          displayName: 🗂️ Debug File Listing
+            echo "📂 Listing contents before split:"
+            ls -l "$(Build.SourcesDirectory)"
+          displayName: 🧪 Verify Swagger File Exists
 
-        # Run Python to split Swagger
         - script: |
             $(PYTHON_PATH) "$(Build.SourcesDirectory)/split_swagger_by_method.py" \
               "$(Build.SourcesDirectory)/$(SWAGGER_FILE)" \
               "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
           displayName: ✂️ Split Swagger into Per-Operation Files
 
-        # Ensure API exists or import it
         - script: |
             echo "🧪 Checking if API exists in APIM..."
             if ! az apim api show \
@@ -86,7 +84,6 @@ stages:
             fi
           displayName: 🧪 Auto-Create API If Missing
 
-        # Validate Swagger vs APIM
         - script: |
             $(PYTHON_PATH) "$(Build.SourcesDirectory)/validate_apim_vs_swagger.py"
           env:
@@ -96,7 +93,6 @@ stages:
             AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
           displayName: 🔒 Validate APIM vs Swagger
 
-        # Remove stale operations
         - script: |
             $(PYTHON_PATH) "$(Build.SourcesDirectory)/cleanup_removed_operations.py"
           env:
@@ -106,7 +102,6 @@ stages:
             AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
           displayName: 🧹 Clean Removed Operations
 
-        # Sync new/updated operations
         - script: |
             $(PYTHON_PATH) "$(Build.SourcesDirectory)/sync_apim_operations.py"
           env:
@@ -116,7 +111,6 @@ stages:
             AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
           displayName: 🚀 Sync Updated Operations to APIM
 
-        # Publish latest revision
         - script: |
             az apim api update \
               --resource-group "$(AZURE_RESOURCE_GROUP)" \
