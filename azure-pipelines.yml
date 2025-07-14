@@ -68,7 +68,11 @@ stages:
             targetType: 'inline'
             script: |
               cd $(Build.SourcesDirectory)
+              echo "🔍 Before update:"
+              grep operationId swagger.json || echo "No operationId present"
               python3 add_operation_ids.py swagger.json
+              echo "🔍 After update:"
+              grep operationId swagger.json || echo "No operationId present"
 
         - task: AzureCLI@2
           displayName: 'Split Swagger into individual operations'
