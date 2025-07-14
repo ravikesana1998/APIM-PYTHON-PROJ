@@ -29,7 +29,7 @@ stages:
       steps:
         - script: |
             curl -sSL "$targetSwaggerUrl" -o "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
-            displayName: 📁 Download Swagger JSON
+          displayName: 📁 Download Swagger JSON
         - script: |
             echo "✅ Downloaded swagger.json:"
             head -n 20 "$BUILD_SOURCESDIRECTORY/$SWAGGER_FILE"
