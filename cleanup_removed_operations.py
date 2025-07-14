@@ -1,39 +1,57 @@
+
 import os
+import json
+import glob
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.apimanagement import ApiManagementClient
+from azure.core.exceptions import ResourceNotFoundError
 
-# Inputs
-subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
-resource_group = os.environ["APIM_RESOURCE_GROUP"]
-apim_name = os.environ["APIM_NAME"]
-api_id = os.environ["APIM_API_NAME"]
-
-print("🧹 Removing stale APIM operations...")
-
-if not os.path.exists("removed_operations.txt"):
-    print("No stale operations to delete.")
-    exit(0)
-
-with open("removed_operations.txt", "r") as f:
-    ops_to_delete = [line.strip() for line in f.readlines() if line.strip()]
-
-if not ops_to_delete:
-    print("No stale operations to delete.")
-    exit(0)
+# ENV
+SUBSCRIPTION_ID = os.environ["AZURE_SUBSCRIPTION_ID"]
+RESOURCE_GROUP = os.environ["AZURE_RESOURCE_GROUP"]
+APIM_NAME = os.environ["AZURE_APIM_NAME"]
+API_ID = os.environ["AZURE_APIM_API_ID"]
 
 credential = DefaultAzureCredential()
-client = ApiManagementClient(credential, subscription_id)
+client = ApiManagementClient(credential, SUBSCRIPTION_ID)
 
-for op_id in ops_to_delete:
-    print(f"🗑️ Deleting operation: {op_id}")
+def get_apim_operations():
     try:
-        client.api_operation.delete(
-            resource_group_name=resource_group,
-            service_name=apim_name,
-            api_id=api_id,
-            operation_id=op_id,
-            if_match="*"
-        )
-        print(f"✅ Deleted: {op_id}")
+        pager = client.api_operation.list_by_api(RESOURCE_GROUP, APIM_NAME, API_ID)
+        return [op.name for op in pager]
+    except ResourceNotFoundError:
+        print("⚠️ API not found in APIM.")
+        return []
+
+def get_swagger_operation_ids():
+    files = glob.glob("split/**/*.json", recursive=True)
+    ids = []
+    for file in files:
+        with open(file) as f:
+            data = json.load(f)
+            if "operationId" in data:
+                ids.append(data["operationId"])
+    return ids
+
+def delete_apim_operation(op_id):
+    try:
+        client.api_operation.delete(RESOURCE_GROUP, APIM_NAME, API_ID, op_id, if_match="*")
+        print(f"🗑️ Deleted stale operation: {op_id}")
     except Exception as e:
         print(f"❌ Failed to delete {op_id}: {e}")
+
+def main():
+    print("🧹 Removing stale APIM operations...")
+    apim_ops = get_apim_operations()
+    swagger_ops = get_swagger_operation_ids()
+
+    stale_ops = [op for op in apim_ops if op not in swagger_ops]
+    if not stale_ops:
+        print("✅ No stale operations to delete.")
+        return
+
+    for op_id in stale_ops:
+        delete_apim_operation(op_id)
+
+if __name__ == "__main__":
+    main()
