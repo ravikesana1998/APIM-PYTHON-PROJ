@@ -28,10 +28,9 @@ stages:
     - job: ExportSwagger
       steps:
         - script: |
-            echo "🌐 Downloading Swagger from: $(targetSwaggerUrl)"
-            curl -fL "$(targetSwaggerUrl)" -o "$(BUILD_SOURCESDIRECTORY)/$(SWAGGER_FILE)"
-          displayName: 📁 Download Swagger JSON
-
+           echo "🌐 Downloading Swagger from: $(targetSwaggerUrl)"
+           curl -fL "$(targetSwaggerUrl)" -o "$(BUILD_SOURCESDIRECTORY)/$(SWAGGER_FILE)"
+           displayName: 📁 Download Swagger JSON
         - script: |
             echo "✅ Downloaded swagger.json:"
             head -n 20 "$(BUILD_SOURCESDIRECTORY)/$(SWAGGER_FILE)"
