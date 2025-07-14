@@ -10,6 +10,7 @@ apim_name = os.environ["AZURE_APIM_NAME"]
 api_id = os.environ["AZURE_APIM_API_ID"]
 split_dir = os.environ.get("SPLIT_DIR", "./split")
 
+
 def get_apim_operation_ids():
     print("🔍 Fetching operation IDs from APIM...")
     credential = DefaultAzureCredential()
@@ -20,6 +21,7 @@ def get_apim_operation_ids():
     except ResourceNotFoundError as e:
         print(f"⚠️ Cannot retrieve operations from APIM: {e.message}")
         return []
+
 
 def get_swagger_operation_ids():
     print("📂 Reading split Swagger files for operation IDs...")
@@ -40,6 +42,7 @@ def get_swagger_operation_ids():
                     print(f"⚠️ Error reading {path}: {e}")
     return ids
 
+
 def main():
     swagger_ops = get_swagger_operation_ids()
     apim_ops = get_apim_operation_ids()
@@ -59,6 +62,7 @@ def main():
     print(f"In APIM but NOT in Swagger: {len(only_in_apim)}")
     for op in only_in_apim:
         print(f"  - {op}")
+
 
 if __name__ == "__main__":
     main()
