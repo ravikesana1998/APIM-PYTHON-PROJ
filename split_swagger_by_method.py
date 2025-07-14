@@ -4,9 +4,15 @@ import sys
 import json
 import re
 from pathlib import Path
+from hashlib import md5
 
 def sanitize_filename(s):
-    return re.sub(r'[^\w\-]', '', s)
+    return re.sub(r'[^\w\-]', '_', s)
+
+def generate_operation_id(method, path):
+    clean_path = path.strip('/').replace('/', '_').replace('{', '').replace('}', '')
+    base = f"{method}_{clean_path}"
+    return sanitize_filename(base[:80]) + '_' + md5(base.encode()).hexdigest()[:6]
 
 def split_swagger_by_method(swagger_path, output_dir):
     with open(swagger_path, "r") as f:
@@ -14,17 +20,16 @@ def split_swagger_by_method(swagger_path, output_dir):
 
     paths = swagger.get("paths", {})
     count = 0
-    missing_ops = 0
 
     for path, methods in paths.items():
         for method, operation in methods.items():
-            op_id = operation.get("operationId")
-            if not op_id:
-                print(f"⚠️ Skipping {method.upper()} {path} (no operationId)")
-                missing_ops += 1
-                continue
+            if "operationId" not in operation or not operation["operationId"].strip():
+                generated_id = generate_operation_id(method, path)
+                print(f"⚠️ Missing operationId for {method.upper()} {path}, generating: {generated_id}")
+                operation["operationId"] = generated_id
+            else:
+                generated_id = sanitize_filename(operation["operationId"])
 
-            # Build operation-specific Swagger
             new_spec = {
                 "openapi": swagger.get("openapi", "3.0.1"),
                 "info": swagger.get("info", {}),
@@ -37,8 +42,7 @@ def split_swagger_by_method(swagger_path, output_dir):
             }
 
             tag_folder = sanitize_filename(operation.get("tags", ["default"])[0])
-            method_prefix = method.lower()
-            filename = f"{method_prefix}_{op_id}.json"
+            filename = f"{method.lower()}_{generated_id}.json"
 
             full_dir = Path(output_dir) / tag_folder
             full_dir.mkdir(parents=True, exist_ok=True)
@@ -50,11 +54,7 @@ def split_swagger_by_method(swagger_path, output_dir):
             print(f"✅ Wrote {full_path}")
             count += 1
 
-    print(f"✂️ Split complete: {count} operations written to {output_dir}")
-
-    if missing_ops > 0:
-        print(f"❌ Split failed: {missing_ops} operations were missing operationId.")
-        sys.exit(1)
+    print(f"\n✂️ Split complete: {count} operations written to {output_dir}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
@@ -62,8 +62,3 @@ if __name__ == "__main__":
         sys.exit(1)
 
     split_swagger_by_method(sys.argv[1], sys.argv[2])
-
-    print(f"  - {os}")
-
-# if __name__ == "__main__":
-#     main()
