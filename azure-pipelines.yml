@@ -7,13 +7,11 @@ pool:
   name: 'self-hosted-pool'
 
 variables:
-  # Swagger-related paths
   targetSwaggerUrl: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   SWAGGER_FILE: 'swagger.json'
   SPLIT_DIR: 'split'
   PYTHON_PATH: '/usr/bin/python3'
 
-  # Azure APIM configuration
   AZURE_SUBSCRIPTION_ID: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
   AZURE_RESOURCE_GROUP: 'rg-23-6'
   AZURE_APIM_NAME: 'dotnetapi9'
@@ -27,14 +25,17 @@ stages:
     - job: ExportSwagger
       steps:
         - script: |
-            curl -sSL $(targetSwaggerUrl) -o $(SWAGGER_FILE)
+            curl -sSL $(targetSwaggerUrl) -o "$(Build.SourcesDirectory)/$(SWAGGER_FILE)"
           displayName: 📁 Download Swagger JSON
 
         - script: |
             echo "✅ Downloaded swagger.json:"
-            cat $(SWAGGER_FILE) | head -n 20
+            head -n 20 "$(Build.SourcesDirectory)/$(SWAGGER_FILE)"
           displayName: 🔍 Preview Swagger Top
 
+# -----------------------------
+# Stage: Split + Sync to APIM
+# -----------------------------
 - stage: SplitAndSyncToAPIM
   displayName: 🌀 Split + Sync to Azure API Management
   dependsOn: BuildAndDownloadSwagger
@@ -42,29 +43,26 @@ stages:
     - job: SyncToAPIM
       steps:
 
+        # Clean and recreate the split folder
         - script: |
-            which $(PYTHON_PATH)
-            $(PYTHON_PATH) --version
-          displayName: 🐍 Check Python Version
-
-        - script: |
-            $(PYTHON_PATH) -m pip install --upgrade pip
-            if [ -f requirements.txt ]; then
-              $(PYTHON_PATH) -m pip install -r requirements.txt
-            else
-              echo "⚠️ No requirements.txt found. Skipping dependency install."
-            fi
-          displayName: 📦 Install Python Dependencies
-
-        - script: |
-            rm -rf $(SPLIT_DIR)
-            mkdir -p $(SPLIT_DIR)
+            rm -rf "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
+            mkdir -p "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
           displayName: 📂 Clean Split Folder
 
+        # Optional: List files for debugging
         - script: |
-            $(PYTHON_PATH) split_swagger_by_method.py $(SWAGGER_FILE) $(SPLIT_DIR)
+            echo "🔍 Listing contents of $(Build.SourcesDirectory):"
+            ls -la "$(Build.SourcesDirectory)"
+          displayName: 🗂️ Debug File Listing
+
+        # Run Python to split Swagger
+        - script: |
+            $(PYTHON_PATH) "$(Build.SourcesDirectory)/split_swagger_by_method.py" \
+              "$(Build.SourcesDirectory)/$(SWAGGER_FILE)" \
+              "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
           displayName: ✂️ Split Swagger into Per-Operation Files
 
+        # Ensure API exists or import it
         - script: |
             echo "🧪 Checking if API exists in APIM..."
             if ! az apim api show \
@@ -80,7 +78,7 @@ stages:
                 --path "$(AZURE_APIM_API_ID)" \
                 --display-name "$(AZURE_APIM_API_ID)" \
                 --specification-format OpenApi \
-                --specification-path "$(SWAGGER_FILE)" || {
+                --specification-path "$(Build.SourcesDirectory)/$(SWAGGER_FILE)" || {
                   echo '❌ API import failed'; exit 1;
                 }
             else
@@ -88,8 +86,9 @@ stages:
             fi
           displayName: 🧪 Auto-Create API If Missing
 
+        # Validate Swagger vs APIM
         - script: |
-            $(PYTHON_PATH) validate_apim_vs_swagger.py
+            $(PYTHON_PATH) "$(Build.SourcesDirectory)/validate_apim_vs_swagger.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -97,8 +96,9 @@ stages:
             AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
           displayName: 🔒 Validate APIM vs Swagger
 
+        # Remove stale operations
         - script: |
-            $(PYTHON_PATH) cleanup_removed_operations.py
+            $(PYTHON_PATH) "$(Build.SourcesDirectory)/cleanup_removed_operations.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -106,8 +106,9 @@ stages:
             AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
           displayName: 🧹 Clean Removed Operations
 
+        # Sync new/updated operations
         - script: |
-            $(PYTHON_PATH) sync_apim_operations.py
+            $(PYTHON_PATH) "$(Build.SourcesDirectory)/sync_apim_operations.py"
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -115,6 +116,7 @@ stages:
             AZURE_APIM_API_ID: $(AZURE_APIM_API_ID)
           displayName: 🚀 Sync Updated Operations to APIM
 
+        # Publish latest revision
         - script: |
             az apim api update \
               --resource-group "$(AZURE_RESOURCE_GROUP)" \
