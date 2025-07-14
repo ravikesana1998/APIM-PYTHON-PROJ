@@ -66,6 +66,7 @@ stages:
         - script: |
             echo "➕ Adding missing operationIds..."
             "$(PYTHON_PATH)" "$(Build.SourcesDirectory)/add_operation_ids.py" "$(Build.SourcesDirectory)/$(SWAGGER_FILE)"
+
             echo "🔍 Validating operationIds..."
             id_count=$(grep -o '"operationId"' "$(Build.SourcesDirectory)/$(SWAGGER_FILE)" | wc -l)
             if [ "$id_count" -eq 0 ]; then
@@ -78,6 +79,7 @@ stages:
         - script: |
             echo "🔍 Verifying swagger.json location:"
             ls -l "$(Build.SourcesDirectory)/$(SWAGGER_FILE)"
+
             "$(PYTHON_PATH)" "$(Build.SourcesDirectory)/split_swagger_by_method.py" \
               "$(Build.SourcesDirectory)/$(SWAGGER_FILE)" \
               "$(Build.SourcesDirectory)/$(SPLIT_DIR)"
@@ -89,6 +91,7 @@ stages:
               --resource-group "$(AZURE_RESOURCE_GROUP)" \
               --service-name "$(AZURE_APIM_NAME)" \
               --api-id "$(AZURE_APIM_API_ID)" &>/dev/null; then
+
               echo "➕ API not found. Creating it from Swagger..."
               az apim api import \
                 --resource-group "$(AZURE_RESOURCE_GROUP)" \
