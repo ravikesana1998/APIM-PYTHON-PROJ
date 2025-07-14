@@ -30,7 +30,7 @@ stages:
         - script: |
             mkdir -p swagger
             echo "Downloading Swagger from $targetSwaggerUrl"
-            $PYTHON_PATH scripts/fetch_and_preprocess_swagger.py
+            $PYTHON_PATH fetch_and_preprocess_swagger.py
           env:
             SWAGGER_URL: $(targetSwaggerUrl)
           displayName: 📁 Download & Preprocess Swagger
@@ -47,7 +47,7 @@ stages:
         - script: |
             rm -rf "$(SPLIT_DIR)"
             mkdir -p "$(SPLIT_DIR)"
-            $PYTHON_PATH scripts/split_swagger_by_operation.py
+            $PYTHON_PATH split_swagger_by_operation.py
           displayName: ✂️ Split Swagger JSON
 
 # ---------------------------------- #
@@ -85,7 +85,7 @@ stages:
 
         # Validate APIM vs Swagger
         - script: |
-            $PYTHON_PATH scripts/validate_apim_vs_swagger.py
+            $PYTHON_PATH validate_apim_vs_swagger.py
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
@@ -100,7 +100,7 @@ stages:
 
         # Sync updated operations
         - script: |
-            $PYTHON_PATH scripts/sync_operations_to_apim.py
+            $PYTHON_PATH sync_operations_to_apim.py
           env:
             AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
             AZURE_RESOURCE_GROUP: $(AZURE_RESOURCE_GROUP)
