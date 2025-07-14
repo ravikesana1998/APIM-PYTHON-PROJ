@@ -43,7 +43,7 @@ stages:
           displayName: 📁 Download Swagger JSON
 
         - script: |
-            echo "✅ Downloaded swagger.json:"
+            echo "✅ Previewing swagger.json:"
             head -n 20 "$(Build.SourcesDirectory)/$(SWAGGER_FILE)"
           displayName: 🔍 Preview Swagger Top
 
@@ -64,7 +64,7 @@ stages:
         - script: |
             echo "📂 List all files in sources directory:"
             find "$(Build.SourcesDirectory)" -type f
-            displayName: 🧪 Debug: List All Files
+          displayName: 🧪 Debug: List All Files
 
         - script: |
             echo "➕ Adding missing operationIds..."
