@@ -6,7 +6,6 @@ pool:
   name: 'self-hosted-pool'
 
 variables:
-  API_VERSION: 'v1'
   SWAGGER_URL: 'https://swagger-server-bcf2hegkbbdzb0e3.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   PYTHON_PATH: '/usr/bin/python3'
   SCRIPT_PATH: 'sync_full_apim.py'
@@ -14,6 +13,7 @@ variables:
   AZURE_RESOURCE_GROUP: 'rg-23-6'
   AZURE_APIM_NAME: 'dotnetapi9'
   AZURE_APIM_API_ID: 'dotnetapi9'
+  API_VERSION: 'v1'  # ✅ Swagger versioning enabled
 
 stages:
 - stage: SyncToAPIM
@@ -23,7 +23,10 @@ stages:
     steps:
     - script: |
         echo "🚚 Starting full sync process..."
-        $(PYTHON_PATH) "$(Build.SourcesDirectory)/$(SCRIPT_PATH)"
+        echo "➡️  Swagger URL: $SWAGGER_URL"
+        echo "➡️  API Version: $API_VERSION"
+        echo "➡️  Script Path: $(Build.SourcesDirectory)/$SCRIPT_PATH"
+        $PYTHON_PATH "$(Build.SourcesDirectory)/$SCRIPT_PATH"
       env:
         SWAGGER_URL: $(SWAGGER_URL)
         AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
