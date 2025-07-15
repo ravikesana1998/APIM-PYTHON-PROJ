@@ -265,17 +265,18 @@ def split_by_operation():
 def ensure_version_set():
     print(f"🔍 Ensuring version set exists: {API_VERSION_SET_ID}")
     result = subprocess.run(
-        f"az apim api version-set show --resource-group {AZURE_RESOURCE_GROUP} "
+        f"az apim api versionset show --resource-group {AZURE_RESOURCE_GROUP} "
         f"--service-name {AZURE_APIM_NAME} --version-set-id {API_VERSION_SET_ID}",
         shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if result.returncode != 0:
         print("📦 Creating version set...")
         run(
-            f"az apim api version-set create --resource-group {AZURE_RESOURCE_GROUP} "
+            f"az apim api versionset create --resource-group {AZURE_RESOURCE_GROUP} "
             f"--service-name {AZURE_APIM_NAME} --version-set-id {API_VERSION_SET_ID} "
             f"--display-name '{AZURE_APIM_API_ID} Version Set' "
             f"--versioning-scheme Segment"
         )
+
 
 def ensure_api_exists():
     result = subprocess.run(
