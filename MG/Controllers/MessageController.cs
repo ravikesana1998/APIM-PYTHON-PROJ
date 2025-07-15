@@ -9,19 +9,19 @@ namespace MG.Controllers
 			_mailBll = mailBll;
 		}
 
-		// [HttpGet("{email}/{folder}/{messageId}")]
-		// public async Task<ActionResult> GetMessageByFolderAndId(string email, string folder, string messageId)
-		// {
-		// 	var response = await _mailBll.GetMessageByFolderAndId(email, folder, messageId);
-		// 	return Ok(response);
-		// }
+		[HttpGet("{email}/{folder}/{messageId}")]
+		public async Task<ActionResult> GetMessageByFolderAndId(string email, string folder, string messageId)
+		{
+			var response = await _mailBll.GetMessageByFolderAndId(email, folder, messageId);
+			return Ok(response);
+		}
 
-		// [HttpGet("{email}/{messageId}")]
-		// public async Task<ActionResult> GetMessagebyId(string email, string messageId)
-		// {
-		// 	var response = await _mailBll.GetMessagebyId(email, messageId);
-		// 	return Ok(response);
-		// }
+		[HttpGet("{email}/{messageId}")]
+		public async Task<ActionResult> GetMessagebyId(string email, string messageId)
+		{
+			var response = await _mailBll.GetMessagebyId(email, messageId);
+			return Ok(response);
+		}
 
 		// [HttpGet("{email}/{messageId}")]
 		// public async Task<ActionResult> GetMessageHeaders(string email, string messageId)
