@@ -16,19 +16,19 @@ namespace MG.Controllers
 			return Ok(response);
 		}
 
-		[HttpGet("{email}/{messageId}")]
-		public async Task<ActionResult> GetMessagebyId(string email, string messageId)
-		{
-			var response = await _mailBll.GetMessagebyId(email, messageId);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{messageId}")]
+		// public async Task<ActionResult> GetMessagebyId(string email, string messageId)
+		// {
+		// 	var response = await _mailBll.GetMessagebyId(email, messageId);
+		// 	return Ok(response);
+		// }
 
-		[HttpGet("{email}/{messageId}")]
-		public async Task<ActionResult> GetMessageHeaders(string email, string messageId)
-		{
-			var response = await _mailBll.GetMessageHeaders(email, messageId);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{messageId}")]
+		// public async Task<ActionResult> GetMessageHeaders(string email, string messageId)
+		// {
+		// 	var response = await _mailBll.GetMessageHeaders(email, messageId);
+		// 	return Ok(response);
+		// }
 
 		// [HttpGet("{email}/{messageId}")]
 		// public async Task<ActionResult> DownloadMessage(string email, string messageId)
