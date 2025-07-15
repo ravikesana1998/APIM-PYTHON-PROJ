@@ -96,15 +96,38 @@ def cleanup_removed_operations():
 
 def sync_operations():
     for file in os.listdir(SPLIT_DIR):
-        if file.endswith(".json"):
-            path = os.path.join(SPLIT_DIR, file)
-            op_id = file.replace(".json", "")
-            print(f"🔄 Syncing: {op_id}")
-            run(
-                f"az apim api operation import --resource-group {AZURE_RESOURCE_GROUP} "
-                f"--service-name {AZURE_APIM_NAME} --api-id {AZURE_APIM_API_ID} "
-                f"--path {op_id} --specification-format OpenApi --specification-path {path}"
-            )
+        if not file.endswith(".json"):
+            continue
+
+        path = os.path.join(SPLIT_DIR, file)
+        with open(path) as f:
+            op_spec = json.load(f)
+
+        [swagger_path] = list(op_spec["paths"].keys())
+        [method] = list(op_spec["paths"][swagger_path].keys())
+        operation = op_spec["paths"][swagger_path][method]
+        operation_id = operation.get("operationId")
+
+        print(f"🔄 Syncing operation: {operation_id}")
+
+        # Build command
+        cmd = (
+            f"az apim api operation create "
+            f"--resource-group {AZURE_RESOURCE_GROUP} "
+            f"--service-name {AZURE_APIM_NAME} "
+            f"--api-id {AZURE_APIM_API_ID} "
+            f"--operation-id {operation_id} "
+            f"--method {method.upper()} "
+            f"--url-template {swagger_path} "
+            f"--display-name {operation_id} "
+        )
+
+        # Optional: Add description if available
+        if "description" in operation:
+            cmd += f"--description \"{operation['description']}\" "
+
+        run(cmd)
+
 
 def publish_revision():
     run(
