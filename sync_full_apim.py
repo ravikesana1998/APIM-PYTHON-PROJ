@@ -98,7 +98,7 @@ def cleanup_removed_operations():
             run(
                 f"az apim api operation delete --resource-group {AZURE_RESOURCE_GROUP} "
                 f"--service-name {AZURE_APIM_NAME} --api-id {AZURE_APIM_API_ID} "
-                f"--operation-id {op['name']} --yes"
+                f"--operation-id {op['name']}"
             )
 
 def sync_operations():
