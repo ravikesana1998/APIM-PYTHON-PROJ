@@ -6,7 +6,7 @@ pool:
   name: 'self-hosted-pool'
 
 variables:
-  SWAGGER_URL: 'https://pythonapps-e0hmd6eucuf9acg5.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
+  SWAGGER_URL: 'https://swagger-server-bcf2hegkbbdzb0e3.canadacentral-01.azurewebsites.net/swagger/v1/swagger.json'
   PYTHON_PATH: '/usr/bin/python3'
   SCRIPT_PATH: 'sync_full_apim.py'
   AZURE_SUBSCRIPTION_ID: '85b61d1d-92dd-4311-90eb-4f3e1263adca'
