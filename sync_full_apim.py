@@ -94,39 +94,28 @@ def cleanup_removed_operations():
             print(f"🗑️ Removing stale operation: {op['name']}")
             run(f"az apim api operation delete --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {AZURE_APIM_API_ID} --operation-id {op['name']} --yes")
 
-def sync_operations():
-    for file in os.listdir(SPLIT_DIR):
-        if not file.endswith(".json"):
-            continue
+# Extract path parameters from the URL template
+import re
 
-        path = os.path.join(SPLIT_DIR, file)
-        with open(path) as f:
-            op_spec = json.load(f)
+template_params = re.findall(r"{(.*?)}", swagger_path)
+template_args = ""
+for param in template_params:
+    template_args += (
+        f"--template-parameters name={param} required=true type=string "
+        f"description='{param} path parameter' "
+    )
 
-        [swagger_path] = list(op_spec["paths"].keys())
-        [method] = list(op_spec["paths"][swagger_path].keys())
-        operation = op_spec["paths"][swagger_path][method]
-        operation_id = operation.get("operationId")
-
-        print(f"🔄 Syncing operation: {operation_id}")
-
-        # Build command
-        cmd = (
-            f"az apim api operation create "
-            f"--resource-group {AZURE_RESOURCE_GROUP} "
-            f"--service-name {AZURE_APIM_NAME} "
-            f"--api-id {AZURE_APIM_API_ID} "
-            f"--operation-id {operation_id} "
-            f"--method {method.upper()} "
-            f"--url-template {swagger_path} "
-            f"--display-name {operation_id} "
-        )
-
-        # Optional: Add description if available
-        if "description" in operation:
-            cmd += f"--description \"{operation['description']}\" "
-
-        run(cmd)
+cmd = (
+    f"az apim api operation create "
+    f"--resource-group {AZURE_RESOURCE_GROUP} "
+    f"--service-name {AZURE_APIM_NAME} "
+    f"--api-id {AZURE_APIM_API_ID} "
+    f"--operation-id {operation_id} "
+    f"--method {method.upper()} "
+    f"--url-template {swagger_path} "
+    f"--display-name {operation_id} "
+    f"{template_args}"
+)
 
 
 def publish_revision():
