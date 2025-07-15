@@ -119,7 +119,7 @@ def sync_operations():
         operation = spec["paths"][swagger_path][method]
         operation_id = operation.get("operationId")
 
-        # Extract path parameters
+        # Extract path parameters for create
         template_params = re.findall(r"{(.*?)}", swagger_path)
         template_args = ""
         for param in template_params:
@@ -130,7 +130,7 @@ def sync_operations():
 
         print(f"🔄 Syncing operation: {operation_id}")
 
-        # Check if operation exists
+        # Check if the operation exists
         check_cmd = (
             f"az apim api operation show --resource-group {AZURE_RESOURCE_GROUP} "
             f"--service-name {AZURE_APIM_NAME} "
@@ -141,16 +141,14 @@ def sync_operations():
 
         if exists.returncode == 0:
             print(f"✏️ Updating existing operation: {operation_id}")
+            # UPDATE: No --template-parameters allowed
             cmd = (
                 f"az apim api operation update "
                 f"--resource-group {AZURE_RESOURCE_GROUP} "
                 f"--service-name {AZURE_APIM_NAME} "
                 f"--api-id {AZURE_APIM_API_ID} "
                 f"--operation-id {operation_id} "
-                f"--method {method.upper()} "
-                f"--url-template {swagger_path} "
-                f"--display-name {operation_id} "
-                f"{template_args}"
+                f"--set method={method.upper()} urlTemplate={swagger_path} displayName={operation_id}"
             )
         else:
             print(f"🆕 Creating new operation: {operation_id}")
