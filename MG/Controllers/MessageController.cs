@@ -73,12 +73,12 @@ namespace MG.Controllers
 			}
 		}
 
-		// [HttpGet("{email}/{parentFolderName}")]
-		// public async Task<ActionResult> GetChildFolders(string email, string parentFolderName)
-		// {
-		// 	var response = await _mailBll.GetChildFolders(email, parentFolderName);
-		// 	return Ok(response);
-		// }
+		[HttpGet("{email}/{parentFolderName}")]
+		public async Task<ActionResult> GetChildFolders(string email, string parentFolderName)
+		{
+			var response = await _mailBll.GetChildFolders(email, parentFolderName);
+			return Ok(response);
+		}
 
 		// [HttpPost]
 		// public async Task<ActionResult> MoveMessage(string email, string messageId, string destinationFolderId)
