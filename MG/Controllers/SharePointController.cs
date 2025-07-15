@@ -11,19 +11,19 @@ namespace MG.Controllers
 		}
 
 
-		[HttpGet]
-		public async Task<ActionResult> GetSiteLists(string siteId)
-		{
-			var response = await _spBll.GetSiteLists(siteId);
-			return Ok(response);
-		}
+		// [HttpGet]
+		// public async Task<ActionResult> GetSiteLists(string siteId)
+		// {
+		// 	var response = await _spBll.GetSiteLists(siteId);
+		// 	return Ok(response);
+		// }
 
-		[HttpGet]
-		public async Task<ActionResult> GetListDetails(string siteId, string listId)
-		{
-			var response = await _spBll.GetListDetails(siteId, listId);
-			return Ok(response);
-		}
+		// [HttpGet]
+		// public async Task<ActionResult> GetListDetails(string siteId, string listId)
+		// {
+		// 	var response = await _spBll.GetListDetails(siteId, listId);
+		// 	return Ok(response);
+		// }
 
 		[HttpPost]
 		public async Task<ActionResult> GetListItems(GetSharePointModel sharepointModel)
