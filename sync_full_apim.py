@@ -100,7 +100,6 @@ def cleanup_removed_operations():
                 f"--service-name {AZURE_APIM_NAME} --api-id {AZURE_APIM_API_ID} "
                 f"--operation-id {op['name']} --yes"
             )
-
 def sync_operations():
     for fname in os.listdir(SPLIT_DIR):
         if not fname.endswith(".json"):
@@ -130,7 +129,7 @@ def sync_operations():
 
         print(f"🔄 Syncing operation: {operation_id}")
         cmd = (
-            f"az apim api operation create "
+            f"az apim api operation create-or-update "
             f"--resource-group {AZURE_RESOURCE_GROUP} "
             f"--service-name {AZURE_APIM_NAME} "
             f"--api-id {AZURE_APIM_API_ID} "
@@ -141,6 +140,7 @@ def sync_operations():
             f"{template_args}"
         )
         run(cmd)
+
 
 def publish_revision():
     run(
