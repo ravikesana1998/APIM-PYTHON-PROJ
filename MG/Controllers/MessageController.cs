@@ -58,27 +58,27 @@ namespace MG.Controllers
 		// 	return Ok(response);
 		// }
 
-		[HttpGet("{email}/{messageId}/{attachmentId}")]
-		public async Task<ActionResult> DownloadAttachmentbyId(string email, string messageId, string attachmentId)
-		{
-			var attachment = await _mailBll.GetAttachmentbyId(email, messageId, attachmentId);
-			if (attachment.Success && attachment.Data != null)
-			{
-				var response = await _mailBll.DownloadAttachmentbyId(email, messageId, attachmentId);
-				return File(response, attachment.Data.ContentType, attachment.Data.Name);
-			}
-			else
-			{
-				return NotFound($"Attachment with name not found in {email} for {messageId}");
-			}
-		}
+		// [HttpGet("{email}/{messageId}/{attachmentId}")]
+		// public async Task<ActionResult> DownloadAttachmentbyId(string email, string messageId, string attachmentId)
+		// {
+		// 	var attachment = await _mailBll.GetAttachmentbyId(email, messageId, attachmentId);
+		// 	if (attachment.Success && attachment.Data != null)
+		// 	{
+		// 		var response = await _mailBll.DownloadAttachmentbyId(email, messageId, attachmentId);
+		// 		return File(response, attachment.Data.ContentType, attachment.Data.Name);
+		// 	}
+		// 	else
+		// 	{
+		// 		return NotFound($"Attachment with name not found in {email} for {messageId}");
+		// 	}
+		// }
 
-		[HttpGet("{email}/{parentFolderName}")]
-		public async Task<ActionResult> GetChildFolders(string email, string parentFolderName)
-		{
-			var response = await _mailBll.GetChildFolders(email, parentFolderName);
-			return Ok(response);
-		}
+		// [HttpGet("{email}/{parentFolderName}")]
+		// public async Task<ActionResult> GetChildFolders(string email, string parentFolderName)
+		// {
+		// 	var response = await _mailBll.GetChildFolders(email, parentFolderName);
+		// 	return Ok(response);
+		// }
 
 		// [HttpPost]
 		// public async Task<ActionResult> MoveMessage(string email, string messageId, string destinationFolderId)
