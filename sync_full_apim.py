@@ -100,6 +100,7 @@ def cleanup_removed_operations():
                 f"--service-name {AZURE_APIM_NAME} --api-id {AZURE_APIM_API_ID} "
                 f"--operation-id {op['name']} --yes"
             )
+
 def sync_operations():
     for fname in os.listdir(SPLIT_DIR):
         if not fname.endswith(".json"):
@@ -128,19 +129,44 @@ def sync_operations():
             )
 
         print(f"🔄 Syncing operation: {operation_id}")
-        cmd = (
-            f"az apim api operation create-or-update "
-            f"--resource-group {AZURE_RESOURCE_GROUP} "
+
+        # Check if operation exists
+        check_cmd = (
+            f"az apim api operation show --resource-group {AZURE_RESOURCE_GROUP} "
             f"--service-name {AZURE_APIM_NAME} "
             f"--api-id {AZURE_APIM_API_ID} "
-            f"--operation-id {operation_id} "
-            f"--method {method.upper()} "
-            f"--url-template {swagger_path} "
-            f"--display-name {operation_id} "
-            f"{template_args}"
+            f"--operation-id {operation_id}"
         )
-        run(cmd)
+        exists = subprocess.run(check_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+        if exists.returncode == 0:
+            print(f"✏️ Updating existing operation: {operation_id}")
+            cmd = (
+                f"az apim api operation update "
+                f"--resource-group {AZURE_RESOURCE_GROUP} "
+                f"--service-name {AZURE_APIM_NAME} "
+                f"--api-id {AZURE_APIM_API_ID} "
+                f"--operation-id {operation_id} "
+                f"--method {method.upper()} "
+                f"--url-template {swagger_path} "
+                f"--display-name {operation_id} "
+                f"{template_args}"
+            )
+        else:
+            print(f"🆕 Creating new operation: {operation_id}")
+            cmd = (
+                f"az apim api operation create "
+                f"--resource-group {AZURE_RESOURCE_GROUP} "
+                f"--service-name {AZURE_APIM_NAME} "
+                f"--api-id {AZURE_APIM_API_ID} "
+                f"--operation-id {operation_id} "
+                f"--method {method.upper()} "
+                f"--url-template {swagger_path} "
+                f"--display-name {operation_id} "
+                f"{template_args}"
+            )
+
+        run(cmd)
 
 def publish_revision():
     run(
