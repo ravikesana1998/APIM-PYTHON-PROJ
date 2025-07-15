@@ -1,6 +1,11 @@
 trigger:
   branches:
-    include: [main]
+    include:
+      - main
+  paths:
+    include:
+      - azure-pipelines.yml
+      - sync_full_apim.py
 
 pool:
   name: 'self-hosted-pool'
