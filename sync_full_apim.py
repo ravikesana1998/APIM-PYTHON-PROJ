@@ -194,16 +194,19 @@
 
 #!/usr/bin/env python3
 # sync_full_apim.py
+
+
 import os, sys, json, requests, subprocess, re
 from pathlib import Path
-from collections import defaultdict
 
 # ------------------- Configuration ------------------- #
 SWAGGER_URL = os.getenv("SWAGGER_URL")
 SWAGGER_FILE = "swagger.json"
-API_VERSION = os.getenv("API_VERSION", "v1")
+AZURE_SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
 AZURE_RESOURCE_GROUP = os.getenv("AZURE_RESOURCE_GROUP")
 AZURE_APIM_NAME = os.getenv("AZURE_APIM_NAME")
+API_BASE_ID = os.getenv("AZURE_APIM_API_ID")
+API_VERSION = os.getenv("API_VERSION", "v1")  # default to v1
 
 # ------------------- Utility ------------------- #
 def run(cmd):
@@ -223,145 +226,116 @@ def fetch_swagger():
         json.dump(res.json(), f, indent=2)
     print(f"✅ Swagger saved to {SWAGGER_FILE}")
 
-def load_swagger():
+def ensure_operation_ids():
     with open(SWAGGER_FILE) as f:
-        return json.load(f)
-
-def ensure_operation_ids(swagger):
+        spec = json.load(f)
     count = 0
-    for path, methods in swagger.get("paths", {}).items():
+    for path, methods in spec.get("paths", {}).items():
         for method, op in methods.items():
             prefix = method.upper()
             clean_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
             op_id = f"{prefix}__{clean_path}"
             op["operationId"] = op_id
             count += 1
-            print(f"🆔 Ensured: {op_id}")
-    return swagger
+            print(f"🏢 Ensured: {op_id}")
+    with open(SWAGGER_FILE, "w") as f:
+        json.dump(spec, f, indent=2)
+    print(f"✅ Ensured {count} operationIds with method prefixes")
 
-def ensure_api_exists(api_id, api_path, display_name, version_set_id):
-    check = subprocess.run(
-        f"az apim api show --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id}",
-        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    if check.returncode != 0:
-        print(f"➕ API {api_id} not found, creating...")
-        run(
-            f"az apim api import --resource-group {AZURE_RESOURCE_GROUP} "
-            f"--service-name {AZURE_APIM_NAME} --api-id {api_id} "
-            f"--path {api_path} --display-name {display_name} "
-            f"--specification-format OpenApi --specification-path {SWAGGER_FILE} "
-            f"--api-version {API_VERSION} --api-version-set-id {version_set_id}"
-        )
-    else:
-        print(f"✅ API {api_id} already exists.")
+def group_operations_by_method():
+    with open(SWAGGER_FILE) as f:
+        spec = json.load(f)
+    grouped = {}
+    for path, methods in spec.get("paths", {}).items():
+        for method, op in methods.items():
+            grouped.setdefault(method.upper(), []).append({"path": path, "operation": op})
+    return grouped, spec
 
-def ensure_version_set(version_set_id, title):
+def write_filtered_swagger_by_method(swagger, method, operations, output_file):
+    filtered_paths = {}
+    for op_data in operations:
+        path = op_data["path"]
+        filtered_paths.setdefault(path, {})[method.lower()] = op_data["operation"]
+    filtered_spec = {
+        "openapi": swagger["openapi"],
+        "info": swagger["info"],
+        "paths": filtered_paths,
+        "components": swagger.get("components", {})
+    }
+    with open(output_file, "w") as f:
+        json.dump(filtered_spec, f, indent=2)
+    print(f"📜 Wrote filtered Swagger: {output_file}")
+
+def ensure_version_set(version_set_id):
+    print("📦 Creating version set (if not exists)...")
     check = subprocess.run(
-        f"az apim api versionset show --resource-group {AZURE_RESOURCE_GROUP} "
-        f"--service-name {AZURE_APIM_NAME} --version-set-id {version_set_id}",
-        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
+        f"az apim api versionset show --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --version-set-id {version_set_id}",
+        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if check.returncode != 0:
-        run(
-            f"az apim api versionset create --resource-group {AZURE_RESOURCE_GROUP} "
-            f"--service-name {AZURE_APIM_NAME} --version-set-id {version_set_id} "
-            f"--display-name '{title} Version Set' --versioning-scheme Segment"
-        )
+        run(f"az apim api versionset create --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --version-set-id {version_set_id} --display-name '{version_set_id}' --versioning-scheme Segment")
     else:
         print(f"✅ Version set {version_set_id} already exists.")
 
-def cleanup_removed_operations(api_id, local_op_ids):
-    remote_json = run(
-        f"az apim api operation list --resource-group {AZURE_RESOURCE_GROUP} "
-        f"--service-name {AZURE_APIM_NAME} --api-id {api_id}"
-    )
+def ensure_api_exists(api_id, api_path, display_name, version_set_id, swagger_file):
+    check = subprocess.run(
+        f"az apim api show --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id}",
+        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if check.returncode != 0:
+        print(f"➕ API {api_id} not found, creating...")
+        run(f"az apim api import --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id} --path {api_path} --display-name {display_name} --specification-format OpenApi --specification-path {swagger_file} --api-version {API_VERSION} --api-version-set-id {version_set_id}")
+    else:
+        print(f"✅ API {api_id} already exists.")
+
+def cleanup_removed_operations(api_id, valid_operation_ids):
+    remote_json = run(f"az apim api operation list --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id}")
     remote_ops = json.loads(remote_json)
     for op in remote_ops:
-        if op['name'] not in local_op_ids:
+        if op['name'] not in valid_operation_ids:
             print(f"🗑️ Removing stale operation: {op['name']}")
-            run(
-                f"az apim api operation delete --resource-group {AZURE_RESOURCE_GROUP} "
-                f"--service-name {AZURE_APIM_NAME} --api-id {api_id} "
-                f"--operation-id {op['name']}"
-            )
+            run(f"az apim api operation delete --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id} --operation-id {op['name']}")
 
 def sync_operations(api_id, method, operations):
     for op_data in operations:
         path = op_data["path"]
         op = op_data["operation"]
         operation_id = op["operationId"]
-        method_upper = method.upper()
-
         template_args = ""
-        for match in re.findall(r"{(.*?)}", path):
-            template_args += (
-                f"--template-parameters name={match} required=true type=string "
-                f"description='{match} path parameter' "
-            )
-
-        exists = subprocess.run(
-            f"az apim api operation show --resource-group {AZURE_RESOURCE_GROUP} "
-            f"--service-name {AZURE_APIM_NAME} --api-id {api_id} "
-            f"--operation-id {operation_id}",
-            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-
+        for param in re.findall(r"{(.*?)}", path):
+            template_args += f"--template-parameters name={param} required=true type=string description='{param} path parameter' "
+        print(f"🔄 Syncing operation: {operation_id}")
+        exists = subprocess.run(f"az apim api operation show --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id} --operation-id {operation_id}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if exists.returncode == 0:
             print(f"✏️ Updating existing operation: {operation_id}")
-            cmd = (
-                f"az apim api operation update "
-                f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
-                f"--api-id {api_id} --operation-id {operation_id} "
-                f"--set method={method_upper} urlTemplate={path} displayName={operation_id}"
-            )
+            cmd = f"az apim api operation update --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id} --operation-id {operation_id} --set method={method.upper()} urlTemplate={path} displayName={operation_id}"
         else:
-            print(f"🆕 Creating new operation: {operation_id}")
-            cmd = (
-                f"az apim api operation create "
-                f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
-                f"--api-id {api_id} --operation-id {operation_id} "
-                f"--method {method_upper} --url-template {path} "
-                f"--display-name {operation_id} {template_args}"
-            )
+            print(f"📰 Creating new operation: {operation_id}")
+            cmd = f"az apim api operation create --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id} --operation-id {operation_id} --method {method.upper()} --url-template {path} --display-name {operation_id} {template_args}"
         run(cmd)
 
 def publish_revision(api_id):
-    run(
-        f"az apim api update --resource-group {AZURE_RESOURCE_GROUP} "
-        f"--service-name {AZURE_APIM_NAME} --api-id {api_id} --set isCurrent=true"
-    )
+    run(f"az apim api update --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} --api-id {api_id} --set isCurrent=true")
     print(f"🚀 Published revision for {api_id}")
 
 # ------------------- Entry Point ------------------- #
 def main():
-    print("🚚 Starting full sync...")
     fetch_swagger()
-    swagger = load_swagger()
-    swagger = ensure_operation_ids(swagger)
-
-    project_title = swagger["info"]["title"].replace(" ", "").lower()  # e.g. mg
+    ensure_operation_ids()
+    grouped_ops, swagger = group_operations_by_method()
+    project_title = swagger['info']['title'].lower()
     version_set_id = f"{project_title}-versionset"
-    ensure_version_set(version_set_id, project_title)
-
-    # Group operations by method
-    grouped_ops = defaultdict(list)
-    for path, methods in swagger.get("paths", {}).items():
-        for method, op in methods.items():
-            grouped_ops[method].append({"path": path, "operation": op})
+    ensure_version_set(version_set_id)
 
     for method in grouped_ops:
         method_lower = method.lower()
         api_id = f"{project_title}-{API_VERSION}-{method_lower}"
         api_path = f"{API_VERSION}/{method_lower}"
         display_name = f"{project_title}-{API_VERSION}-{method_lower}"
-
-        ensure_api_exists(api_id, api_path, display_name, version_set_id)
-
-        ops = grouped_ops[method]
-        op_ids = [op["operation"]["operationId"] for op in ops]
+        swagger_file = f"swagger-{method_lower}.json"
+        write_filtered_swagger_by_method(swagger, method, grouped_ops[method], swagger_file)
+        ensure_api_exists(api_id, api_path, display_name, version_set_id, swagger_file)
+        op_ids = [op["operation"]["operationId"] for op in grouped_ops[method]]
         cleanup_removed_operations(api_id, op_ids)
-        sync_operations(api_id, method, ops)
+        sync_operations(api_id, method, grouped_ops[method])
         publish_revision(api_id)
 
 if __name__ == "__main__":
