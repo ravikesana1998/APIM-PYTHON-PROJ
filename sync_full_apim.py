@@ -194,29 +194,28 @@
 
 #!/usr/bin/env python3
 # sync_full_apim.py
-
-import os, sys, json, requests, subprocess
+import os, sys, json, requests, subprocess, re
 from pathlib import Path
-from copy import deepcopy
+from collections import defaultdict
 
-# ------------------- Config ------------------- #
+# ------------------- Configuration ------------------- #
 SWAGGER_URL = os.getenv("SWAGGER_URL")
 SWAGGER_FILE = "swagger.json"
+AZURE_SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
 AZURE_RESOURCE_GROUP = os.getenv("AZURE_RESOURCE_GROUP")
 AZURE_APIM_NAME = os.getenv("AZURE_APIM_NAME")
 API_VERSION = os.getenv("API_VERSION", "v1")
-METHODS = ["get", "post", "delete", "patch"]
 
-# ------------------- Utils ------------------- #
+# ------------------- Utility ------------------- #
 def run(cmd):
     print(f"> {cmd}")
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(result.stderr)
-        sys.exit(result.returncode)
-    return result.stdout
+    res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if res.returncode != 0:
+        print(res.stderr)
+        sys.exit(res.returncode)
+    return res.stdout
 
-# ------------------- Sync Steps ------------------- #
+# ------------------- Core Functions ------------------- #
 def fetch_swagger():
     print(f"🌐 Downloading Swagger from {SWAGGER_URL}")
     res = requests.get(SWAGGER_URL)
@@ -241,38 +240,28 @@ def ensure_operation_ids():
         json.dump(spec, f, indent=2)
     print(f"✅ Ensured {count} operationIds with method prefixes")
 
-def extract_title():
+def sync_by_method():
     with open(SWAGGER_FILE) as f:
-        spec = json.load(f)
-    return spec["info"]["title"]
+        full_spec = json.load(f)
 
-def filter_by_method(method):
-    with open(SWAGGER_FILE) as f:
-        spec = json.load(f)
-    filtered = {
-        "openapi": spec.get("openapi", "3.0.0"),
-        "info": deepcopy(spec["info"]),
-        "paths": {},
-        "components": deepcopy(spec.get("components", {}))
-    }
-    for path, methods in spec["paths"].items():
-        if method in methods:
-            filtered["paths"][path] = {method: methods[method]}
-    fname = f"swagger-{method}.json"
-    with open(fname, "w") as f:
-        json.dump(filtered, f, indent=2)
-    print(f"📜 Wrote filtered Swagger: {fname}")
-    return fname
+    title = full_spec.get("info", {}).get("title", "api").lower().replace(" ", "-")
+    safe_version = API_VERSION.replace(".", "-")
+    version_set_id = f"{title}-versionset"
 
-def ensure_version_set(title):
-    version_set_id = f"{title.lower()}-versionset"
-    check = subprocess.run(
+    # Group paths by HTTP method
+    method_map = defaultdict(dict)
+    for path, methods in full_spec.get("paths", {}).items():
+        for method, op in methods.items():
+            method_map[method.lower()][path] = {method: op}
+
+    # Ensure version set exists
+    print("\n📦 Ensuring version set exists...")
+    vs_check = subprocess.run(
         f"az apim api versionset show --resource-group {AZURE_RESOURCE_GROUP} "
         f"--service-name {AZURE_APIM_NAME} --version-set-id {version_set_id}",
         shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
-    if check.returncode != 0:
-        print("➕ Creating version set...")
+    if vs_check.returncode != 0:
         run(
             f"az apim api versionset create --resource-group {AZURE_RESOURCE_GROUP} "
             f"--service-name {AZURE_APIM_NAME} --version-set-id {version_set_id} "
@@ -280,43 +269,48 @@ def ensure_version_set(title):
         )
     else:
         print(f"✅ Version set {version_set_id} already exists.")
-    return version_set_id
 
-def import_api(api_id, api_path, swagger_path, version_set_id, display_name):
-    check = subprocess.run(
-        f"az apim api show --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
-        f"--api-id {api_id}",
-        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    if check.returncode != 0:
-        print(f"➕ API {api_id} not found, creating...")
-        run(
-            f"az apim api import --resource-group {AZURE_RESOURCE_GROUP} "
-            f"--service-name {AZURE_APIM_NAME} --api-id {api_id} "
-            f"--path {api_path} --display-name {display_name} "
-            f"--specification-format OpenApi --specification-path {swagger_path} "
-            f"--api-version {API_VERSION} --api-version-set-id {version_set_id}"
+    for method, path_obj in method_map.items():
+        print(f"\n🔄 Syncing {method.upper()} operations...")
+        filtered = {
+            "openapi": full_spec.get("openapi", "3.0.0"),
+            "info": full_spec.get("info", {}),
+            "paths": path_obj,
+            "components": full_spec.get("components", {})
+        }
+
+        filtered_file = f"swagger-{method}.json"
+        with open(filtered_file, "w") as f:
+            json.dump(filtered, f, indent=2)
+        print(f"📜 Wrote filtered Swagger: {filtered_file}")
+
+        api_id = f"{title}-{safe_version}-{method}"
+        api_path = f"{safe_version}/{method}"
+
+        # Check if API exists
+        exists = subprocess.run(
+            f"az apim api show --resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
+            f"--api-id {api_id}",
+            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-    else:
-        print(f"✅ API {api_id} already exists.")
+        if exists.returncode != 0:
+            print(f"➕ API {api_id} not found, creating...")
+            run(
+                f"az apim api import --resource-group {AZURE_RESOURCE_GROUP} "
+                f"--service-name {AZURE_APIM_NAME} --api-id {api_id} "
+                f"--path {api_path} --display-name {api_id} "
+                f"--specification-format OpenApi --specification-path {filtered_file} "
+                f"--api-version {API_VERSION} --api-version-set-id {version_set_id}"
+            )
+        else:
+            print(f"✅ API {api_id} already exists.")
 
-# ------------------- Main ------------------- #
+# ------------------- Entry ------------------- #
 def main():
-    print("🚚 Starting sync per HTTP method...")
+    print("\n🚚 Starting APIM sync by HTTP method...")
     fetch_swagger()
     ensure_operation_ids()
-    project_title = extract_title()
-    version_set_id = ensure_version_set(project_title)
-
-    for method in METHODS:
-        print(f"\n🔄 Syncing {method.upper()} operations...")
-        swagger_file = filter_by_method(method)
-        api_id = f"{project_title.lower()}-{API_VERSION}-{method}"
-        api_path = f"{API_VERSION}/{method}"
-        display_name = api_id
-        import_api(api_id, api_path, swagger_file, version_set_id, display_name)
-
-    print("\n✅ Sync complete for all methods.")
+    sync_by_method()
 
 if __name__ == "__main__":
     main()
