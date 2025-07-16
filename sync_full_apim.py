@@ -194,23 +194,23 @@
 
 #!/usr/bin/env python3
 # sync_full_apim.py
-
 import os, sys, json, requests, subprocess, re
 from pathlib import Path
 
 # ------------------- Configuration ------------------- #
 SWAGGER_URL = os.getenv("SWAGGER_URL")
-SPLIT_DIR = "split"
+SPLIT_ROOT = "split"
 SWAGGER_FILE = "swagger.json"
 
 AZURE_SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
 AZURE_RESOURCE_GROUP = os.getenv("AZURE_RESOURCE_GROUP")
 AZURE_APIM_NAME = os.getenv("AZURE_APIM_NAME")
 API_BASE_ID = os.getenv("AZURE_APIM_API_ID")
-API_VERSION = os.getenv("API_VERSION", "v1")  # default to v1
+API_VERSION = os.getenv("API_VERSION", "v1")
 API_ID = f"{API_BASE_ID}-{API_VERSION}"
 API_PATH = f"{API_VERSION}"
 VERSION_SET_ID = f"{API_BASE_ID}-versionset"
+SPLIT_DIR = os.path.join(SPLIT_ROOT, API_VERSION)
 
 # ------------------- Utility ------------------- #
 def run(cmd):
@@ -226,7 +226,7 @@ def fetch_swagger():
     print(f"🌐 Downloading Swagger from {SWAGGER_URL}")
     res = requests.get(SWAGGER_URL)
     res.raise_for_status()
-    Path(SPLIT_DIR).mkdir(exist_ok=True)
+    Path(SPLIT_DIR).mkdir(parents=True, exist_ok=True)
     with open(SWAGGER_FILE, "w") as f:
         json.dump(res.json(), f, indent=2)
     print(f"✅ Swagger saved to {SWAGGER_FILE}")
@@ -234,64 +234,46 @@ def fetch_swagger():
 def ensure_operation_ids():
     with open(SWAGGER_FILE) as f:
         spec = json.load(f)
-    count = 0
+    count_added = 0
+    count_prefixed = 0
     for path, methods in spec.get("paths", {}).items():
         for method, op in methods.items():
+            method_upper = method.upper()
             if "operationId" not in op:
-                op_id = f"{method}_{path.strip('/').replace('/', '_').replace('{', '').replace('}', '')}"
+                op_id = f"{method_upper}__{path.strip('/').replace('/', '_').replace('{', '').replace('}', '')}"
                 op["operationId"] = op_id
-                count += 1
+                count_added += 1
                 print(f"🆔 Added: {op_id}")
+            else:
+                op_id = op["operationId"]
+                if not op_id.startswith(f"{method_upper}__"):
+                    new_id = f"{method_upper}__{op_id}"
+                    op["operationId"] = new_id
+                    count_prefixed += 1
+                    print(f"🔄 Prefixed: {op_id} -> {new_id}")
     with open(SWAGGER_FILE, "w") as f:
         json.dump(spec, f, indent=2)
-    print(f"✅ Added {count} missing operationIds")
+    print(f"✅ Added {count_added} new operationIds, prefixed {count_prefixed}")
 
 def split_by_operation():
-    def safe_filename(name):
-        return re.sub(r"[^a-zA-Z0-9_]", "_", name)
-
-    def ensure_dir(path):
-        Path(path).mkdir(parents=True, exist_ok=True)
-
-    print("✂️ Splitting operations by version and method...")
-
     with open(SWAGGER_FILE) as f:
         spec = json.load(f)
-
-    openapi_ver = spec.get("openapi", "3.0.0")
-    info = spec.get("info", {})
-    components = spec.get("components", {})
-
     for path, methods in spec.get("paths", {}).items():
-        version_match = re.search(r"/(v\d+)/", path)
-        version = version_match.group(1) if version_match else "unversioned"
-
         for method, op in methods.items():
-            method_lower = method.lower()
-            operation_id = op.get("operationId")
-
-            if not operation_id:
-                operation_id = f"{method}_{safe_filename(path)}"
-                op["operationId"] = operation_id
-
-            folder_path = os.path.join(SPLIT_DIR, version, method_lower)
-            ensure_dir(folder_path)
-
-            split_spec = {
-                "openapi": openapi_ver,
-                "info": info,
+            op_id = op.get("operationId")
+            method_upper = method.upper()
+            dir_path = os.path.join(SPLIT_DIR, method_upper)
+            Path(dir_path).mkdir(parents=True, exist_ok=True)
+            filename = os.path.join(dir_path, f"{op_id}.json")
+            data = {
+                "openapi": spec.get("openapi", "3.0.0"),
+                "info": spec.get("info", {}),
                 "paths": {path: {method: op}},
-                "components": components
+                "components": spec.get("components", {})
             }
-
-            filename = f"{safe_filename(operation_id)}.json"
-            full_path = os.path.join(folder_path, filename)
-
-            with open(full_path, "w") as f:
-                json.dump(split_spec, f, indent=2)
-
-            print(f"✅ Wrote {full_path}")
-
+            with open(filename, "w") as f:
+                json.dump(data, f, indent=2)
+            print(f"✂️ Wrote {filename}")
 
 def ensure_version_set():
     print("📦 Creating version set (if not exists)...")
@@ -346,19 +328,19 @@ def cleanup_removed_operations():
             )
 
 def sync_operations():
-    for root, _, files in os.walk(SPLIT_DIR):
-        for fname in files:
+    for method_dir in os.listdir(SPLIT_DIR):
+        method_path = os.path.join(SPLIT_DIR, method_dir)
+        if not os.path.isdir(method_path):
+            continue
+        for fname in os.listdir(method_path):
             if not fname.endswith(".json"):
                 continue
-
-            path = os.path.join(root, fname)
+            path = os.path.join(method_path, fname)
             with open(path) as f:
                 spec = json.load(f)
-
             paths = list(spec["paths"].keys())
             if not paths:
                 continue
-
             swagger_path = paths[0]
             method = list(spec["paths"][swagger_path].keys())[0]
             operation = spec["paths"][swagger_path][method]
@@ -373,8 +355,6 @@ def sync_operations():
                 )
 
             print(f"🔄 Syncing operation: {operation_id}")
-
-            # Check if operation exists
             exists = subprocess.run(
                 f"az apim api operation show --resource-group {AZURE_RESOURCE_GROUP} "
                 f"--service-name {AZURE_APIM_NAME} --api-id {API_ID} "
@@ -382,17 +362,13 @@ def sync_operations():
                 shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
 
-            method_upper = method.upper()
-            tag_param = f"--tags {method_upper}"
-
             if exists.returncode == 0:
                 print(f"✏️ Updating existing operation: {operation_id}")
                 cmd = (
                     f"az apim api operation update "
                     f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
                     f"--api-id {API_ID} --operation-id {operation_id} "
-                    f"--set method={method_upper} urlTemplate={swagger_path} displayName={operation_id} "
-                    f"{tag_param}"
+                    f"--set method={method.upper()} urlTemplate={swagger_path} displayName={operation_id}"
                 )
             else:
                 print(f"🆕 Creating new operation: {operation_id}")
@@ -400,12 +376,10 @@ def sync_operations():
                     f"az apim api operation create "
                     f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
                     f"--api-id {API_ID} --operation-id {operation_id} "
-                    f"--method {method_upper} --url-template {swagger_path} "
-                    f"--display-name {operation_id} {template_args} {tag_param}"
+                    f"--method {method.upper()} --url-template {swagger_path} "
+                    f"--display-name {operation_id} {template_args}"
                 )
-
             run(cmd)
-
 
 def publish_revision():
     run(
@@ -429,3 +403,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
