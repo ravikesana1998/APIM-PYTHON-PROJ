@@ -18,7 +18,7 @@ variables:
   AZURE_RESOURCE_GROUP: 'rg-23-6'
   AZURE_APIM_NAME: 'dotnetapi9'
   AZURE_APIM_API_ID: 'dotnetapi9'
-  API_VERSION: 'v3.1'  # ✅ Swagger versioning enabled
+  API_VERSION: 'v3-1'  # ✅ Swagger versioning enabled
 
 stages:
 - stage: SyncToAPIM
