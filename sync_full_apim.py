@@ -247,21 +247,51 @@ def ensure_operation_ids():
     print(f"✅ Added {count} missing operationIds")
 
 def split_by_operation():
+    def safe_filename(name):
+        return re.sub(r"[^a-zA-Z0-9_]", "_", name)
+
+    def ensure_dir(path):
+        Path(path).mkdir(parents=True, exist_ok=True)
+
+    print("✂️ Splitting operations by version and method...")
+
     with open(SWAGGER_FILE) as f:
         spec = json.load(f)
+
+    openapi_ver = spec.get("openapi", "3.0.0")
+    info = spec.get("info", {})
+    components = spec.get("components", {})
+
     for path, methods in spec.get("paths", {}).items():
+        version_match = re.search(r"/(v\d+)/", path)
+        version = version_match.group(1) if version_match else "unversioned"
+
         for method, op in methods.items():
-            op_id = op.get("operationId")
-            filename = os.path.join(SPLIT_DIR, f"{op_id}.json")
-            data = {
-                "openapi": spec.get("openapi", "3.0.0"),
-                "info": spec.get("info", {}),
+            method_lower = method.lower()
+            operation_id = op.get("operationId")
+
+            if not operation_id:
+                operation_id = f"{method}_{safe_filename(path)}"
+                op["operationId"] = operation_id
+
+            folder_path = os.path.join(SPLIT_DIR, version, method_lower)
+            ensure_dir(folder_path)
+
+            split_spec = {
+                "openapi": openapi_ver,
+                "info": info,
                 "paths": {path: {method: op}},
-                "components": spec.get("components", {})
+                "components": components
             }
-            with open(filename, "w") as f:
-                json.dump(data, f, indent=2)
-            print(f"✂️ Wrote {filename}")
+
+            filename = f"{safe_filename(operation_id)}.json"
+            full_path = os.path.join(folder_path, filename)
+
+            with open(full_path, "w") as f:
+                json.dump(split_spec, f, indent=2)
+
+            print(f"✅ Wrote {full_path}")
+
 
 def ensure_version_set():
     print("📦 Creating version set (if not exists)...")
@@ -316,54 +346,57 @@ def cleanup_removed_operations():
             )
 
 def sync_operations():
-    for fname in os.listdir(SPLIT_DIR):
-        if not fname.endswith(".json"):
-            continue
-        path = os.path.join(SPLIT_DIR, fname)
-        with open(path) as f:
-            spec = json.load(f)
-        paths = list(spec["paths"].keys())
-        if not paths:
-            continue
-        swagger_path = paths[0]
-        method = list(spec["paths"][swagger_path].keys())[0]
-        operation = spec["paths"][swagger_path][method]
-        operation_id = operation.get("operationId")
+    for root, _, files in os.walk(SPLIT_DIR):
+        for fname in files:
+            if not fname.endswith(".json"):
+                continue
 
-        template_params = re.findall(r"{(.*?)}", swagger_path)
-        template_args = ""
-        for param in template_params:
-            template_args += (
-                f"--template-parameters name={param} required=true type=string "
-                f"description='{param} path parameter' "
+            path = os.path.join(root, fname)
+            with open(path) as f:
+                spec = json.load(f)
+
+            paths = list(spec["paths"].keys())
+            if not paths:
+                continue
+            swagger_path = paths[0]
+            method = list(spec["paths"][swagger_path].keys())[0]
+            operation = spec["paths"][swagger_path][method]
+            operation_id = operation.get("operationId")
+
+            template_params = re.findall(r"{(.*?)}", swagger_path)
+            template_args = ""
+            for param in template_params:
+                template_args += (
+                    f"--template-parameters name={param} required=true type=string "
+                    f"description='{param} path parameter' "
+                )
+
+            print(f"🔄 Syncing operation: {operation_id}")
+            exists = subprocess.run(
+                f"az apim api operation show --resource-group {AZURE_RESOURCE_GROUP} "
+                f"--service-name {AZURE_APIM_NAME} --api-id {API_ID} "
+                f"--operation-id {operation_id}",
+                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
 
-        print(f"🔄 Syncing operation: {operation_id}")
-        exists = subprocess.run(
-            f"az apim api operation show --resource-group {AZURE_RESOURCE_GROUP} "
-            f"--service-name {AZURE_APIM_NAME} --api-id {API_ID} "
-            f"--operation-id {operation_id}",
-            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-
-        if exists.returncode == 0:
-            print(f"✏️ Updating existing operation: {operation_id}")
-            cmd = (
-                f"az apim api operation update "
-                f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
-                f"--api-id {API_ID} --operation-id {operation_id} "
-                f"--set method={method.upper()} urlTemplate={swagger_path} displayName={operation_id}"
-            )
-        else:
-            print(f"🆕 Creating new operation: {operation_id}")
-            cmd = (
-                f"az apim api operation create "
-                f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
-                f"--api-id {API_ID} --operation-id {operation_id} "
-                f"--method {method.upper()} --url-template {swagger_path} "
-                f"--display-name {operation_id} {template_args}"
-            )
-        run(cmd)
+            if exists.returncode == 0:
+                print(f"✏️ Updating existing operation: {operation_id}")
+                cmd = (
+                    f"az apim api operation update "
+                    f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
+                    f"--api-id {API_ID} --operation-id {operation_id} "
+                    f"--set method={method.upper()} urlTemplate={swagger_path} displayName={operation_id}"
+                )
+            else:
+                print(f"🆕 Creating new operation: {operation_id}")
+                cmd = (
+                    f"az apim api operation create "
+                    f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
+                    f"--api-id {API_ID} --operation-id {operation_id} "
+                    f"--method {method.upper()} --url-template {swagger_path} "
+                    f"--display-name {operation_id} {template_args}"
+                )
+            run(cmd)
 
 def publish_revision():
     run(
