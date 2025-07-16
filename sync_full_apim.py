@@ -194,6 +194,7 @@
 
 #!/usr/bin/env python3
 # sync_full_apim.py
+
 import os, sys, json, requests, subprocess, re
 from pathlib import Path
 
@@ -222,7 +223,7 @@ def run(cmd):
 
 # ------------------- Sync Steps ------------------- #
 def fetch_swagger():
-    print(f"\U0001F310 Downloading Swagger from {SWAGGER_URL}")
+    print(f"🌐 Downloading Swagger from {SWAGGER_URL}")
     res = requests.get(SWAGGER_URL)
     res.raise_for_status()
     Path(SPLIT_DIR).mkdir(exist_ok=True)
@@ -236,21 +237,15 @@ def ensure_operation_ids():
     count = 0
     for path, methods in spec.get("paths", {}).items():
         for method, op in methods.items():
-            if "operationId" not in op:
-                op_id = f"{method}_{path.strip('/').replace('/', '_').replace('{', '').replace('}', '')}"
-                op["operationId"] = op_id
-                count += 1
-                print(f"🆔 Added: {op_id}")
-            else:
-                # Prefix with method for APIM UI grouping
-                op_id = op["operationId"]
-                if not op_id.lower().startswith(method.lower() + "_"):
-                    prefixed = f"{method}_{op_id}"
-                    op["operationId"] = prefixed
-                    print(f"📝 Prefixed operationId: {prefixed}")
+            prefix = method.upper()
+            clean_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
+            op_id = f"{prefix}__{clean_path}"
+            op["operationId"] = op_id
+            count += 1
+            print(f"🆔 Ensured: {op_id}")
     with open(SWAGGER_FILE, "w") as f:
         json.dump(spec, f, indent=2)
-    print(f"✅ OperationIds ensured/prefixed")
+    print(f"✅ Ensured {count} operationIds with method prefixes")
 
 def split_by_operation():
     with open(SWAGGER_FILE) as f:
@@ -360,7 +355,6 @@ def sync_operations():
                 f"--api-id {API_ID} --operation-id {operation_id} "
                 f"--set method={method.upper()} urlTemplate={swagger_path} displayName={operation_id}"
             )
-            run(cmd)
         else:
             print(f"🆕 Creating new operation: {operation_id}")
             cmd = (
@@ -370,21 +364,7 @@ def sync_operations():
                 f"--method {method.upper()} --url-template {swagger_path} "
                 f"--display-name {operation_id} {template_args}"
             )
-            run(cmd)
-
-        # 🏷️ Apply tag via REST API
-        tag_payload = json.dumps({
-            "properties": {
-                "tags": [method.upper()]
-            }
-        })
-        rest_cmd = (
-            f"az rest --method patch "
-            f"--uri https://management.azure.com/subscriptions/{AZURE_SUBSCRIPTION_ID}/resourceGroups/{AZURE_RESOURCE_GROUP}/"
-            f"providers/Microsoft.ApiManagement/service/{AZURE_APIM_NAME}/apis/{API_ID}/operations/{operation_id}?api-version=2022-08-01 "
-            f"--body '{tag_payload}'"
-        )
-        run(rest_cmd)
+        run(cmd)
 
 def publish_revision():
     run(
