@@ -308,7 +308,7 @@ def sync_by_method():
             run(
                 f"az apim api import --resource-group {AZURE_RESOURCE_GROUP} "
                 f"--service-name {AZURE_APIM_NAME} --api-id {api_id} "
-                f"--path {api_path} --display-name {api_id} "
+                f"--path {api_path} --display-name '{API_VERSION} {method.upper()}' "
                 f"--specification-format OpenApi --specification-path {filtered_file} "
                 f"--api-version {version_tag} --api-version-set-id {version_set_id}"
             )
