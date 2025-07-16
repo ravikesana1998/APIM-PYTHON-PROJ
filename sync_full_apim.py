@@ -206,9 +206,9 @@ SWAGGER_FILE = "swagger.json"
 AZURE_SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
 AZURE_RESOURCE_GROUP = os.getenv("AZURE_RESOURCE_GROUP")
 AZURE_APIM_NAME = os.getenv("AZURE_APIM_NAME")
-API_VERSION = os.getenv("API_VERSION", "v1")  # like "v3.1"
+API_VERSION = os.getenv("API_VERSION", "v1")  # e.g. "v3.1"
 
-# ------------------- Utility ------------------- #
+# ------------------- Utilities ------------------- #
 def run(cmd):
     print(f"> {cmd}")
     res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -217,7 +217,10 @@ def run(cmd):
         sys.exit(res.returncode)
     return res.stdout
 
-# ------------------- Core Functions ------------------- #
+def normalize_version(version):
+    return version.replace(".", "-")
+
+# ------------------- Steps ------------------- #
 def fetch_swagger():
     print(f"🌐 Downloading Swagger from {SWAGGER_URL}")
     res = requests.get(SWAGGER_URL)
@@ -242,21 +245,7 @@ def ensure_operation_ids():
         json.dump(spec, f, indent=2)
     print(f"✅ Ensured {count} operationIds with method prefixes")
 
-def sync_by_method():
-    with open(SWAGGER_FILE) as f:
-        full_spec = json.load(f)
-
-    title = full_spec.get("info", {}).get("title", "api").lower().replace(" ", "-")  # e.g., "mg"
-    safe_version = API_VERSION.replace(".", "-")  # e.g., "v3-1"
-    version_set_id = f"{title}-versionset"
-
-    # Group paths by HTTP method
-    method_map = defaultdict(dict)
-    for path, methods in full_spec.get("paths", {}).items():
-        for method, op in methods.items():
-            method_map[method.lower()][path] = {method: op}
-
-    # Ensure version set exists
+def ensure_version_set(title, version_set_id):
     print("\n📦 Ensuring version set exists...")
     vs_check = subprocess.run(
         f"az apim api versionset show --resource-group {AZURE_RESOURCE_GROUP} "
@@ -272,12 +261,25 @@ def sync_by_method():
     else:
         print(f"✅ Version set {version_set_id} already exists.")
 
-    # Sync each method as separate API
+def sync_by_method():
+    with open(SWAGGER_FILE) as f:
+        full_spec = json.load(f)
+
+    title = full_spec.get("info", {}).get("title", "api").lower().replace(" ", "-")
+    safe_version = normalize_version(API_VERSION)  # e.g. v3-1
+    version_set_id = f"{title}-versionset"
+
+    ensure_version_set(title, version_set_id)
+
+    method_map = defaultdict(dict)
+    for path, methods in full_spec.get("paths", {}).items():
+        for method, op in methods.items():
+            method_map[method.lower()][path] = {method: op}
+
     for method, path_obj in method_map.items():
         print(f"\n🔄 Syncing {method.upper()} operations...")
 
-        # Filter only this method's operations
-        filtered_spec = {
+        filtered = {
             "openapi": full_spec.get("openapi", "3.0.0"),
             "info": full_spec.get("info", {}),
             "paths": path_obj,
@@ -286,12 +288,13 @@ def sync_by_method():
 
         filtered_file = f"swagger-{method}.json"
         with open(filtered_file, "w") as f:
-            json.dump(filtered_spec, f, indent=2)
+            json.dump(filtered, f, indent=2)
         print(f"📜 Wrote filtered Swagger: {filtered_file}")
 
-        version_with_method = f"{API_VERSION}-{method}"        # e.g., v3.1-get
-        api_id = f"{title}-{safe_version}-{method}"            # e.g., mg-v3-1-get
-        api_path = f"{safe_version}/{method}"                  # e.g., v3-1/get
+        # Create versioned API ID and path per method
+        version_tag = f"{API_VERSION}-{method}"        # e.g. v3.1-get
+        api_id = f"{title}-{normalize_version(version_tag)}"  # mg-v3-1-get
+        api_path = f"{safe_version}/{method}"          # v3-1/get
 
         # Check if API exists
         exists = subprocess.run(
@@ -299,6 +302,7 @@ def sync_by_method():
             f"--api-id {api_id}",
             shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
+
         if exists.returncode != 0:
             print(f"➕ API {api_id} not found, creating...")
             run(
@@ -306,14 +310,14 @@ def sync_by_method():
                 f"--service-name {AZURE_APIM_NAME} --api-id {api_id} "
                 f"--path {api_path} --display-name {api_id} "
                 f"--specification-format OpenApi --specification-path {filtered_file} "
-                f"--api-version {version_with_method} --api-version-set-id {version_set_id}"
+                f"--api-version {version_tag} --api-version-set-id {version_set_id}"
             )
         else:
             print(f"✅ API {api_id} already exists.")
 
-# ------------------- Entry ------------------- #
+# ------------------- Main ------------------- #
 def main():
-    print("\n🚚 Starting APIM sync by HTTP method...")
+    print("🚀 Starting APIM sync by method + version...")
     fetch_swagger()
     ensure_operation_ids()
     sync_by_method()
