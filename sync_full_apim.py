@@ -358,6 +358,7 @@ def sync_operations():
             paths = list(spec["paths"].keys())
             if not paths:
                 continue
+
             swagger_path = paths[0]
             method = list(spec["paths"][swagger_path].keys())[0]
             operation = spec["paths"][swagger_path][method]
@@ -372,6 +373,8 @@ def sync_operations():
                 )
 
             print(f"🔄 Syncing operation: {operation_id}")
+
+            # Check if operation exists
             exists = subprocess.run(
                 f"az apim api operation show --resource-group {AZURE_RESOURCE_GROUP} "
                 f"--service-name {AZURE_APIM_NAME} --api-id {API_ID} "
@@ -379,13 +382,17 @@ def sync_operations():
                 shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
 
+            method_upper = method.upper()
+            tag_param = f"--tags {method_upper}"
+
             if exists.returncode == 0:
                 print(f"✏️ Updating existing operation: {operation_id}")
                 cmd = (
                     f"az apim api operation update "
                     f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
                     f"--api-id {API_ID} --operation-id {operation_id} "
-                    f"--set method={method.upper()} urlTemplate={swagger_path} displayName={operation_id}"
+                    f"--set method={method_upper} urlTemplate={swagger_path} displayName={operation_id} "
+                    f"{tag_param}"
                 )
             else:
                 print(f"🆕 Creating new operation: {operation_id}")
@@ -393,10 +400,12 @@ def sync_operations():
                     f"az apim api operation create "
                     f"--resource-group {AZURE_RESOURCE_GROUP} --service-name {AZURE_APIM_NAME} "
                     f"--api-id {API_ID} --operation-id {operation_id} "
-                    f"--method {method.upper()} --url-template {swagger_path} "
-                    f"--display-name {operation_id} {template_args}"
+                    f"--method {method_upper} --url-template {swagger_path} "
+                    f"--display-name {operation_id} {template_args} {tag_param}"
                 )
+
             run(cmd)
+
 
 def publish_revision():
     run(
